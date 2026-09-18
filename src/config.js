@@ -19,7 +19,7 @@ export const APP_CONFIG = Object.freeze({
   cloud: Object.freeze({
     enabled: false,
     supabaseUrl: "https://zdjcsdgkszmajvpvdrsk.supabase.co",
-    supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXAiLCJyZWYiOiJ6ZGoianNkZ2tzem1hanZwdmRyc2siLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc4OTcyMzkzOCwiZXhwIjoxNjQ1MzA1Mzg2fQ.2R4r91pBRj6qOK2tRrSb1eaqxuCdmQ_bWv_nE6P9rgw",
+    supabaseAnonKey: null,
     supabaseJsCdn: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
   })
 });
