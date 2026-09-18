@@ -7,6 +7,7 @@ class CloudSync {
   static async pushMilkLog(animalId, yieldLiters) {
     if (!navigator.onLine) {
       console.log('Offline: Saving locally.');
+      alert('Offline: Saved locally to device storage.');
       return false;
     }
 
@@ -16,15 +17,21 @@ class CloudSync {
 
     if (error) {
       console.error('Cloud Sync Error:', error.message);
+      alert('Cloud Sync Error: ' + error.message);
       return false;
     }
 
     console.log('Successfully synced to Supabase Cloud!');
+    alert('Success! Milk record saved to cloud database.');
     return true;
   }
 
   static async pushBreedingLog(animalId, breedingDate, expectedCalving) {
-    if (!navigator.onLine) return false;
+    if (!navigator.onLine) {
+      console.log('Offline: Saving locally.');
+      alert('Offline: Saved locally to device storage.');
+      return false;
+    }
 
     const { data, error } = await supabaseClient
       .from('breeding_logs')
@@ -34,7 +41,19 @@ class CloudSync {
         expected_calving: expectedCalving
       }]);
 
-    if (error) console.error('Cloud Sync Error:', error.message);
-    return !error;
+    if (error) {
+      console.error('Cloud Sync Error:', error.message);
+      // PostgreSQL unique violation error code
+      if (error.code === '23505') {
+        alert('Practical Farm Check: 🐄 This cow already has a breeding record logged for this exact date!');
+      } else {
+        alert('Cloud Sync Error: ' + error.message);
+      }
+      return false;
+    }
+
+    console.log('Successfully synced breeding log to Supabase Cloud!');
+    alert('Success! Breeding record saved to cloud database.');
+    return true;
   }
 }
