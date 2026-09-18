@@ -74,6 +74,53 @@ class FarmDashboard {
     updateText('stat-active-breedings', stats.activeBreedings);
     updateText('stat-total-expenses', `Ksh ${stats.totalExpensesKes}`);
   }
+
+  /**
+   * Fetches and renders an individual animal's 360° profile into the DOM container.
+   */
+  static async renderAnimalProfile(animalId) {
+    const container = document.getElementById('animalProfileContainer');
+    if (!container) return;
+
+    container.innerHTML = '<p>Loading profile...</p>';
+
+    const profile = await CloudSync.getAnimalProfile(animalId);
+
+    if (!profile || !profile.animal) {
+      container.innerHTML = `<p style="color: red;">Animal ID "${animalId}" not found in cloud database.</p>`;
+      return;
+    }
+
+    const { animal, milkLogs, breedingLogs, healthLogs } = profile;
+
+    let milkHtml = milkLogs.length > 0 
+      ? milkLogs.map(m => `<li>${m.created_at ? new Date(m.created_at).toLocaleDateString() : 'N/A'}: <strong>${m.yield_liters} L</strong></li>`).join('')
+      : '<li>No milk records found.</li>';
+
+    let breedingHtml = breedingLogs.length > 0
+      ? breedingLogs.map(b => `<li>Bred: ${b.breeding_date} | Expected Calving: ${b.expected_calving}</li>`).join('')
+      : '<li>No breeding records found.</li>';
+
+    let healthHtml = healthLogs.length > 0
+      ? healthLogs.map(h => `<li>${h.treatment_date} - <strong>${h.treatment_type}</strong> (${h.description || 'No desc'}): Ksh ${h.cost}</li>`).join('')
+      : '<li>No health records found.</li>';
+
+    container.innerHTML = `
+      <div style="background: #f1f8e9; padding: 15px; border-radius: 6px; border: 1px solid #c8e6c9;">
+        <h3 style="margin-top: 0; color: #2e7d32;">🐄 Animal Profile: ${animal.animal_id}</h3>
+        <p><strong>Breed:</strong> ${animal.breed} | <strong>Status:</strong> ${animal.status} | <strong>Birth Date:</strong> ${animal.birth_date || 'N/A'}</p>
+        
+        <h4>Milk Production History</h4>
+        <ul>${milkHtml}</ul>
+
+        <h4>Breeding History</h4>
+        <ul>${breedingHtml}</ul>
+
+        <h4>Health & Treatment History</h4>
+        <ul>${healthHtml}</ul>
+      </div>
+    `;
+  }
 }
 
 // Auto-render stats on page load if dashboard container is present
