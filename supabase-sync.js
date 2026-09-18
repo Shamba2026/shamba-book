@@ -4,9 +4,40 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 class CloudSync {
+  // --- ANIMAL REGISTRY ---
+  static async registerAnimal(animalId, breed, birthDate, status) {
+    if (!navigator.onLine) {
+      alert('Offline: Saved locally to device storage.');
+      return false;
+    }
+
+    const { data, error } = await supabaseClient
+      .from('animals')
+      .insert([{ 
+        animal_id: animalId, 
+        breed: breed, 
+        birth_date: birthDate, 
+        status: status 
+      }]);
+
+    if (error) {
+      console.error('Cloud Sync Error:', error.message);
+      if (error.code === '23505') {
+        alert('Practical Farm Check: 🐄 Animal ID "' + animalId + '" is already registered in the system!');
+      } else {
+        alert('Cloud Sync Error: ' + error.message);
+      }
+      return false;
+    }
+
+    console.log('Successfully registered animal to Supabase Cloud!');
+    alert('Success! Animal profile registered in cloud database.');
+    return true;
+  }
+
+  // --- MILK PRODUCTION LOGS ---
   static async pushMilkLog(animalId, yieldLiters) {
     if (!navigator.onLine) {
-      console.log('Offline: Saving locally.');
       alert('Offline: Saved locally to device storage.');
       return false;
     }
@@ -21,14 +52,14 @@ class CloudSync {
       return false;
     }
 
-    console.log('Successfully synced to Supabase Cloud!');
+    console.log('Successfully synced milk log to Supabase Cloud!');
     alert('Success! Milk record saved to cloud database.');
     return true;
   }
 
+  // --- BREEDING SERVICE LOGS ---
   static async pushBreedingLog(animalId, breedingDate, expectedCalving) {
     if (!navigator.onLine) {
-      console.log('Offline: Saving locally.');
       alert('Offline: Saved locally to device storage.');
       return false;
     }
@@ -43,7 +74,6 @@ class CloudSync {
 
     if (error) {
       console.error('Cloud Sync Error:', error.message);
-      // PostgreSQL unique violation error code
       if (error.code === '23505') {
         alert('Practical Farm Check: 🐄 This cow already has a breeding record logged for this exact date!');
       } else {
