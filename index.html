@@ -1,66 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shamba Book Farm Manager</title>
-  <link rel="manifest" href="manifest.json">
-  <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f8; color: #333; }
-    h1 { color: #2e7d32; }
-    .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    label { display: block; margin-top: 10px; font-weight: bold; }
-    input, select, button { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; }
-    button { background-color: #2e7d32; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 15px; }
-    button:hover { background-color: #1b5e20; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shamba Book Farm Manager</title>
+    <!-- Supabase Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f9f9f9; color: #333; }
+        .card { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; margin-top: 0; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #27ae60; color: white; border: none; padding: 10px 15px; margin-top: 15px; cursor: pointer; border-radius: 4px; font-size: 16px; width: 100%; }
+        button:hover { background: #219653; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: #e8f5e9; padding: 15px; border-radius: 6px; text-align: center; border-left: 4px solid #27ae60; }
+        .stat-value { font-size: 20px; font-weight: bold; color: #2e7d32; margin-top: 5px; }
+    </style>
 </head>
 <body>
-  <h1>Shamba Book Farm Manager</h1>
 
-  <!-- Milk Recording Form -->
-  <div class="card">
-    <h2>Record Milk Production</h2>
-    <form id="milking-form">
-      <label for="milk-animal-id">Animal ID:</label>
-      <input type="text" id="milk-animal-id" value="cow-102" required>
+    <h1>🐄 Shamba Book Farm Manager</h1>
+    <p>Production-ready small-scale dairy management system ($0/month budget).</p>
 
-      <label for="milk-amount">Yield (Liters):</label>
-      <input type="number" id="milk-amount" step="0.1" placeholder="e.g. 12.5" required>
+    <!-- Phase 9: Farm Intelligence Dashboard Summary -->
+    <div class="card">
+        <h2>Farm Intelligence Summary</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div>Total Animals</div>
+                <div id="stat-total-animals" class="stat-value">0</div>
+            </div>
+            <div class="stat-card">
+                <div>Total Milk Yield</div>
+                <div id="stat-total-milk" class="stat-value">0 L</div>
+            </div>
+            <div class="stat-card">
+                <div>Active Breedings</div>
+                <div id="stat-active-breedings" class="stat-value">0</div>
+            </div>
+            <div class="stat-card">
+                <div>Total Expenses</div>
+                <div id="stat-total-expenses" class="stat-value">Ksh 0.00</div>
+            </div>
+        </div>
+    </div>
 
-      <button type="submit">Save Milk Record</button>
-    </form>
-  </div>
+    <!-- Phase 7: Register Animal Form -->
+    <div class="card">
+        <h2>Register New Animal</h2>
+        <form id="animalForm">
+            <label>Animal ID:</label>
+            <input type="text" id="regAnimalId" placeholder="e.g., cow-102" required>
+            <label>Breed:</label>
+            <input type="text" id="regBreed" placeholder="e.g., Friesian / Ayrshire" required>
+            <label>Birth Date:</label>
+            <input type="date" id="regBirthDate">
+            <label>Status:</label>
+            <select id="regStatus">
+                <option value="Milking">Milking</option>
+                <option value="Dry">Dry</option>
+                <option value="Heifer">Heifer</option>
+                <option value="Bull">Bull</option>
+            </select>
+            <button type="submit">Register Animal</button>
+        </form>
+    </div>
 
-  <!-- Breeding Log Form -->
-  <div class="card">
-    <h2>Record Breeding Service</h2>
-    <form id="breeding-form">
-      <label for="breed-animal-id">Animal ID:</label>
-      <input type="text" id="breed-animal-id" value="cow-102" required>
+    <!-- Milk Production Form -->
+    <div class="card">
+        <h2>Record Milk Production</h2>
+        <form id="milkForm">
+            <label>Animal ID:</label>
+            <input type="text" id="milkAnimalId" placeholder="e.g., cow-102" required>
+            <label>Yield (Liters):</label>
+            <input type="number" step="0.1" id="milkYield" placeholder="e.g., 12.5" required>
+            <button type="submit">Save Milk Record</button>
+        </form>
+    </div>
 
-      <label for="breeding-date">Breeding Date:</label>
-      <input type="date" id="breeding-date" required>
+    <!-- Breeding Service Form -->
+    <div class="card">
+        <h2>Record Breeding Service</h2>
+        <form id="breedingForm">
+            <label>Animal ID:</label>
+            <input type="text" id="breedingAnimalId" placeholder="e.g., cow-102" required>
+            <label>Breeding Date:</label>
+            <input type="date" id="breedingDate" required>
+            <label>Expected Calving Date (approx 283 days):</label>
+            <input type="date" id="expectedCalving" required>
+            <button type="submit">Save Breeding Record</button>
+        </form>
+    </div>
 
-      <button type="submit">Save Breeding Record</button>
-    </form>
-  </div>
+    <!-- Phase 8: Health Treatment Form -->
+    <div class="card">
+        <h2>Record Health Treatment</h2>
+        <form id="healthForm">
+            <label>Animal ID:</label>
+            <input type="text" id="healthAnimalId" placeholder="e.g., cow-102" required>
+            <label>Treatment Type:</label>
+            <select id="treatmentType">
+                <option value="Vaccination">Vaccination</option>
+                <option value="Deworming">Deworming</option>
+                <option value="Mastitis Treatment">Mastitis Treatment</option>
+                <option value="Vet Check">Vet Check</option>
+            </select>
+            <label>Description / Medicine:</label>
+            <input type="text" id="healthDesc" placeholder="e.g., East Coast Fever vaccine">
+            <label>Treatment Date:</label>
+            <input type="date" id="treatmentDate" required>
+            <label>Cost (Ksh):</label>
+            <input type="number" step="0.01" id="healthCost" placeholder="0.00" value="0">
+            <button type="submit">Save Health Record</button>
+        </form>
+    </div>
 
-  <!-- Supabase CDN & JS Files -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="biological-logic.js"></script>
-  <script src="supabase-sync.js"></script>
-  <script src="app.js"></script>
+    <!-- Phase 8: Expense Log Form -->
+    <div class="card">
+        <h2>Record Farm Expense</h2>
+        <form id="expenseForm">
+            <label>Category:</label>
+            <select id="expenseCategory">
+                <option value="Feed / Dairy Meal">Feed / Dairy Meal</option>
+                <option value="Hay / Roughage">Hay / Roughage</option>
+                <option value="Veterinary Services">Veterinary Services</option>
+                <option value="Labor">Labor</option>
+                <option value="Maintenance">Maintenance</option>
+            </select>
+            <label>Amount (Ksh):</label>
+            <input type="number" step="0.01" id="expenseAmount" placeholder="e.g., 2500" required>
+            <label>Expense Date:</label>
+            <input type="date" id="expenseDate" required>
+            <label>Notes:</label>
+            <input type="text" id="expenseNotes" placeholder="e.g., 5 bags of dairy meal">
+            <button type="submit">Save Expense Record</button>
+        </form>
+    </div>
 
-  <!-- Register Service Worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js')
-          .then(() => console.log('Service Worker Registered'))
-          .catch(err => console.error('Service Worker Error:', err));
-      });
-    }
-  </script>
+    <!-- Core Scripts Integration -->
+    <script src="supabase-sync.js"></script>
+    <script src="dashboard.js"></script>
+    <script>
+        // Service Worker Registration for PWA Offline Support
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('Service Worker Registered', reg))
+                    .catch(err => console.log('Service Worker registration failed', err));
+            });
+        }
+
+        // Form Event Handlers
+        document.getElementById('animalForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const success = await CloudSync.registerAnimal(
+                document.getElementById('regAnimalId').value.trim(),
+                document.getElementById('regBreed').value.trim(),
+                document.getElementById('regBirthDate').value,
+                document.getElementById('regStatus').value
+            );
+            if (success) { document.getElementById('animalForm').reset(); FarmDashboard.renderDashboardUI(); }
+        });
+
+        document.getElementById('milkForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const success = await CloudSync.pushMilkLog(
+                document.getElementById('milkAnimalId').value.trim(),
+                parseFloat(document.getElementById('milkYield').value)
+            );
+            if (success) { document.getElementById('milkForm').reset(); FarmDashboard.renderDashboardUI(); }
+        });
+
+        document.getElementById('breedingForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const success = await CloudSync.pushBreedingLog(
+                document.getElementById('breedingAnimalId').value.trim(),
+                document.getElementById('breedingDate').value,
+                document.getElementById('expectedCalving').value
+            );
+            if (success) { document.getElementById('breedingForm').reset(); FarmDashboard.renderDashboardUI(); }
+        });
+
+        document.getElementById('healthForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const success = await CloudSync.pushHealthLog(
+                document.getElementById('healthAnimalId').value.trim(),
+                document.getElementById('treatmentType').value,
+                document.getElementById('healthDesc').value.trim(),
+                document.getElementById('treatmentDate').value,
+                parseFloat(document.getElementById('healthCost').value || 0)
+            );
+            if (success) { document.getElementById('healthForm').reset(); FarmDashboard.renderDashboardUI(); }
+        });
+
+        document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const success = await CloudSync.pushExpenseLog(
+                document.getElementById('expenseCategory').value,
+                parseFloat(document.getElementById('expenseAmount').value),
+                document.getElementById('expenseDate').value,
+                document.getElementById('expenseNotes').value.trim()
+            );
+            if (success) { document.getElementById('expenseForm').reset(); FarmDashboard.renderDashboardUI(); }
+        });
+    </script>
 </body>
 </html>
