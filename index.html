@@ -1,232 +1,161 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shamba Book Farm Manager</title>
-    <!-- PWA Manifest Link -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#27ae60">
-    <!-- Supabase Client CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f9f9f9; color: #333; }
-        .card { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h2 { color: #2c3e50; margin-top: 0; }
-        label { display: block; margin-top: 10px; font-weight: bold; }
-        input, select, textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        button { background: #27ae60; color: white; border: none; padding: 10px 15px; margin-top: 15px; cursor: pointer; border-radius: 4px; font-size: 16px; width: 100%; }
-        button:hover { background: #219653; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
-        .stat-card { background: #e8f5e9; padding: 15px; border-radius: 6px; text-align: center; border-left: 4px solid #27ae60; }
-        .stat-value { font-size: 20px; font-weight: bold; color: #2e7d32; margin-top: 5px; }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f7a4d">
+  <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./styles/app.css">
+  <title>Ngombe Herdbook</title>
 </head>
 <body>
+  <main class="app-shell">
+    <header class="header">
+      <div class="brand"><h1>🐄 Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div>
+      <div id="app-status" class="status-pill">Starting…</div>
+    </header>
+    <div id="fatal-error" class="fatal" hidden></div>
 
-    <h1>🐄 Shamba Book Farm Manager</h1>
-    <p>Production-ready small-scale dairy management system ($0/month budget).</p>
-
-    <!-- Farm Intelligence Dashboard Summary -->
-    <div class="card">
-        <h2>Farm Intelligence Summary</h2>
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div>Total Animals</div>
-                <div id="stat-total-animals" class="stat-value">0</div>
-            </div>
-            <div class="stat-card">
-                <div>Total Milk Yield</div>
-                <div id="stat-total-milk" class="stat-value">0 L</div>
-            </div>
-            <div class="stat-card">
-                <div>Active Breedings</div>
-                <div id="stat-active-breedings" class="stat-value">0</div>
-            </div>
-            <div class="stat-card">
-                <div>Total Expenses</div>
-                <div id="stat-total-expenses" class="stat-value">Ksh 0.00</div>
-            </div>
+    <section data-view="home">
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-head"><div><h2>Today</h2><div class="muted" id="today-date"></div></div><div class="notice">Local-first recording is active.</div></div>
+        <div class="grid stats">
+          <div class="card stat"><div class="label">All animals</div><div id="stat-total" class="value">0</div></div>
+          <div class="card stat"><div class="label">Dairy cows</div><div id="stat-dairy" class="value">0</div></div>
+          <div class="card stat"><div class="label">Bulls</div><div id="stat-bulls" class="value">0</div></div>
+          <div class="card stat"><div class="label">Calves</div><div id="stat-calves" class="value">0</div></div>
         </div>
-    </div>
+      </div>
 
-    <!-- Animal 360° Profile Lookup Card -->
-    <div class="card">
-        <h2>Animal 360° Profile Lookup</h2>
-        <label>Animal ID:</label>
-        <input type="text" id="searchAnimalId" placeholder="e.g., cow-102">
-        <button type="button" id="searchAnimalBtn">View Profile</button>
-        <div id="animalProfileContainer" style="margin-top: 15px;"></div>
-    </div>
+      <div class="grid two" style="margin-bottom:16px">
+        <div class="card"><h3>Today's milk</h3><div id="today-milk" style="font-size:2rem;font-weight:800">0 L</div><div class="muted">Indicative value at KSh 49/L: <strong id="today-value">KSh 0</strong></div></div>
+        <div class="card"><h3>This milk week</h3><div id="week-period" style="font-size:1.3rem;font-weight:800">—</div><div class="muted">Payment day: Saturday</div></div>
+      </div>
 
-    <!-- Register Animal Form -->
-    <div class="card">
-        <h2>Register New Animal</h2>
-        <form id="animalForm">
-            <label>Animal ID:</label>
-            <input type="text" id="regAnimalId" placeholder="e.g., cow-102" required>
-            <label>Breed:</label>
-            <input type="text" id="regBreed" placeholder="e.g., Friesian / Ayrshire" required>
-            <label>Birth Date:</label>
-            <input type="date" id="regBirthDate">
-            <label>Status:</label>
-            <select id="regStatus">
-                <option value="Milking">Milking</option>
-                <option value="Dry">Dry</option>
-                <option value="Heifer">Heifer</option>
-                <option value="Bull">Bull</option>
-            </select>
-            <button type="submit">Register Animal</button>
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-head"><h3>Quick actions</h3></div>
+        <div class="quick-actions">
+          <button class="action" type="button" data-nav-action="milk"><strong>🥛 Record milk</strong><span>Morning, afternoon or evening</span></button>
+          <button class="action" type="button" data-nav-action="animals"><strong>🐄 Add animal</strong><span>Photo required</span></button>
+          <button class="action" type="button" data-nav-action="health"><strong>🩺 Health record</strong><span>Treatment and cost</span></button>
+          <button class="action" type="button" data-nav-action="milk"><strong>⚖ Record bull weight</strong><span>Weight in kg</span></button>
+          <button class="action" type="button" data-nav-action="finance"><strong>💰 Finance</strong><span>Income and expenses</span></button>
+        </div>
+      </div>
+
+      <div class="card"><div class="section-head"><h3>Sync status</h3><span id="sync-count" class="chip">0</span></div><div class="muted">Pending local records stay on this device until secure cloud synchronization is enabled.</div></div>
+    </section>
+
+    <section data-view="animals" hidden>
+      <div class="grid two">
+        <form id="animal-form" class="card">
+          <div class="section-head"><h2>Add animal</h2></div>
+          <div class="form-grid">
+            <div class="field"><label for="animal-code">Animal name / ID</label><input id="animal-code" placeholder="e.g. Murungu" required></div>
+            <div class="field"><label for="animal-type">Type</label><select id="animal-type"><option value="dairy_cow">Dairy cow</option><option value="bull">Bull</option><option value="calf">Calf</option><option value="heifer">Heifer</option><option value="other">Other</option></select></div>
+            <div class="field"><label for="animal-breed">Breed</label><input id="animal-breed" placeholder="e.g. Friesian" required></div>
+            <div class="field"><label for="animal-sex">Sex</label><select id="animal-sex"><option value="">Unknown / not recorded</option><option value="female">Female</option><option value="male">Male</option></select></div>
+            <div class="field"><label for="animal-birth">Date of birth</label><input id="animal-birth" type="date"></div>
+            <div class="field"><label for="animal-acquired">Date brought to farm</label><input id="animal-acquired" type="date"></div>
+            <div class="field"><label for="animal-source">Source</label><input id="animal-source" placeholder="Born on farm / purchased / other"></div>
+            <div class="field"><label for="animal-status">Status</label><select id="animal-status"><option value="active">Active</option><option value="dry">Dry</option><option value="sold">Sold</option><option value="culled">Culled</option><option value="deceased">Deceased</option></select></div>
+            <div class="field"><label for="animal-rfid">RFID (optional)</label><input id="animal-rfid"></div>
+            <div class="field"><label for="animal-qr">QR value (optional)</label><input id="animal-qr"></div>
+            <div class="field full"><label for="animal-photo">Animal profile photo — required</label><input id="animal-photo" type="file" accept="image/*" capture="environment" required></div>
+            <div class="field full"><label for="animal-notes">Notes</label><textarea id="animal-notes" rows="3"></textarea></div>
+            <div class="field full"><button class="primary" type="submit">Save animal on this device</button></div>
+          </div>
         </form>
-    </div>
 
-    <!-- Milk Production Form -->
-    <div class="card">
-        <h2>Record Milk Production</h2>
-        <form id="milkForm">
-            <label>Animal ID:</label>
-            <input type="text" id="milkAnimalId" placeholder="e.g., cow-102" required>
-            <label>Yield (Liters):</label>
-            <input type="number" step="0.1" id="milkYield" placeholder="e.g., 12.5" required>
-            <button type="submit">Save Milk Record</button>
+        <div class="card"><div class="section-head"><h2>Herd</h2></div><div id="animal-list" class="animal-list"></div><div id="animals-empty" class="muted">No animals recorded on this device yet.</div></div>
+      </div>
+
+      <div id="animal-profile" class="card" style="margin-top:16px" hidden>
+        <div class="section-head"><h2 id="profile-name">Animal</h2></div>
+        <div class="profile">
+          <img id="profile-photo" class="profile-photo" alt="Animal profile photo" hidden>
+          <div><div class="profile-meta">
+            <div class="meta"><small>Type</small><strong id="profile-type"></strong></div>
+            <div class="meta"><small>Breed</small><strong id="profile-breed"></strong></div>
+            <div class="meta"><small>Status</small><strong id="profile-status"></strong></div>
+            <div class="meta"><small>Source</small><strong id="profile-source"></strong></div>
+            <div class="meta"><small>Birth date</small><strong id="profile-birth"></strong></div>
+          </div><p class="muted" style="margin-top:14px">This master identity will grow into the full Animal 360 profile: productivity, breeding, calving, health, family, attachments and financial history.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section data-view="milk" hidden>
+      <div class="grid two">
+        <form id="milk-form" class="card">
+          <div class="section-head"><h2>Record milk</h2></div>
+          <div class="form-grid">
+            <div class="field full"><label for="milk-animal">Animal</label><select id="milk-animal" required></select></div>
+            <div class="field"><label for="milk-session">Milking</label><select id="milk-session"><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select></div>
+            <div class="field"><label for="milk-date">Date</label><input id="milk-date" type="date" required></div>
+            <div class="field"><label for="milk-liters">Litres</label><input id="milk-liters" type="number" min="0.1" max="60" step="0.1" required></div>
+            <div class="field"><label>Milk value</label><div id="milk-value-preview" style="padding:11px 12px;border:1px solid var(--line);border-radius:12px">—</div></div>
+            <div class="field full"><button class="primary" type="submit">Save milk record</button></div>
+          </div>
         </form>
-    </div>
+        <div class="card"><h2>Farm milk rule</h2><p>Milk is recorded per animal for morning, afternoon and evening.</p><p class="muted">Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday-Friday period.</p></div>
+      </div>
 
-    <!-- Breeding Service Form -->
-    <div class="card">
-        <h2>Record Breeding Service</h2>
-        <form id="breedingForm">
-            <label>Animal ID:</label>
-            <input type="text" id="breedingAnimalId" placeholder="e.g., cow-102" required>
-            <label>Breeding Date:</label>
-            <input type="date" id="breedingDate" required>
-            <label>Expected Calving Date (approx 283 days):</label>
-            <input type="date" id="expectedCalving" required>
-            <button type="submit">Save Breeding Record</button>
-        </form>
-    </div>
+      <form id="weight-form" class="card" style="margin-top:16px">
+        <div class="section-head"><h2>Record bull weight</h2></div>
+        <div class="form-grid">
+          <div class="field"><label for="weight-animal">Bull</label><select id="weight-animal" required></select></div>
+          <div class="field"><label for="weight-date">Date</label><input id="weight-date" type="date" required></div>
+          <div class="field"><label for="weight-kg">Weight (kg)</label><input id="weight-kg" type="number" min="1" max="2000" step="0.1" required></div>
+          <div class="field"><button class="primary" type="submit">Save weight</button></div>
+        </div>
+      </form>
 
-    <!-- Health Treatment Form -->
-    <div class="card">
-        <h2>Record Health Treatment</h2>
-        <form id="healthForm">
-            <label>Animal ID:</label>
-            <input type="text" id="healthAnimalId" placeholder="e.g., cow-102" required>
-            <label>Treatment Type:</label>
-            <select id="treatmentType">
-                <option value="Vaccination">Vaccination</option>
-                <option value="Deworming">Deworming</option>
-                <option value="Mastitis Treatment">Mastitis Treatment</option>
-                <option value="Vet Check">Vet Check</option>
-            </select>
-            <label>Description / Medicine:</label>
-            <input type="text" id="healthDesc" placeholder="e.g., East Coast Fever vaccine">
-            <label>Treatment Date:</label>
-            <input type="date" id="treatmentDate" required>
-            <label>Cost (Ksh):</label>
-            <input type="number" step="0.01" id="healthCost" placeholder="0.00" value="0">
-            <button type="submit">Save Health Record</button>
-        </form>
-    </div>
+      <form id="breeding-form" class="card" style="margin-top:16px">
+        <div class="section-head"><h2>Record breeding service</h2></div>
+        <div class="form-grid">
+          <div class="field"><label for="breeding-animal">Dairy cow</label><select id="breeding-animal" required></select></div>
+          <div class="field"><label for="breeding-date">Service date</label><input id="breeding-date" type="date" required></div>
+          <div class="field"><label for="expected-calving">Expected calving — calculated</label><input id="expected-calving" type="date" readonly></div>
+          <div class="field"><button class="primary" type="submit">Save breeding</button></div>
+        </div>
+      </form>
+    </section>
 
-    <!-- Expense Log Form -->
-    <div class="card">
-        <h2>Record Farm Expense</h2>
-        <form id="expenseForm">
-            <label>Category:</label>
-            <select id="expenseCategory">
-                <option value="Feed / Dairy Meal">Feed / Dairy Meal</option>
-                <option value="Hay / Roughage">Hay / Roughage</option>
-                <option value="Veterinary Services">Veterinary Services</option>
-                <option value="Labor">Labor</option>
-                <option value="Maintenance">Maintenance</option>
-            </select>
-            <label>Amount (Ksh):</label>
-            <input type="number" step="0.01" id="expenseAmount" placeholder="e.g., 2500" required>
-            <label>Expense Date:</label>
-            <input type="date" id="expenseDate" required>
-            <label>Notes:</label>
-            <input type="text" id="expenseNotes" placeholder="e.g., 5 bags of dairy meal">
-            <button type="submit">Save Expense Record</button>
-        </form>
-    </div>
+    <section data-view="health" hidden>
+      <form id="health-form" class="card">
+        <div class="section-head"><h2>Health & treatment</h2></div>
+        <div class="form-grid">
+          <div class="field"><label for="health-animal">Animal</label><select id="health-animal" required></select></div>
+          <div class="field"><label for="health-date">Treatment date</label><input id="health-date" type="date" required></div>
+          <div class="field"><label for="health-type">Treatment type</label><select id="health-type"><option>Vaccination</option><option>Deworming</option><option>Mastitis Treatment</option><option>Vet Check</option><option>Other</option></select></div>
+          <div class="field"><label for="health-cost">Cost (KSh)</label><input id="health-cost" type="number" min="0" step="0.01" value="0"></div>
+          <div class="field full"><label for="health-description">Description / medicine</label><textarea id="health-description" rows="3"></textarea></div>
+          <div class="field full"><button class="primary" type="submit">Save health record</button></div>
+        </div>
+      </form>
+    </section>
 
-    <!-- Core Scripts Integration -->
-    <script src="supabase-sync.js"></script>
-    <script src="dashboard.js"></script>
-    <script>
-        // Service Worker Registration for PWA Offline Support
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js')
-                    .then(reg => console.log('Service Worker Registered successfully', reg))
-                    .catch(err => console.log('Service Worker registration failed', err));
-            });
-        }
+    <section data-view="finance" hidden>
+      <div class="grid two"><div class="card"><h2>Income</h2><p class="muted">Milk sales and bull/animal sales are tracked separately from physical production records.</p></div><div class="card"><h2>Expenses</h2><p class="muted">Feed, veterinary, labour, maintenance and other farm expenses can carry evidence and payment references.</p></div></div>
+      <div class="card" style="margin-top:16px"><h3>M-Pesa record keeping</h3><p class="muted">The target record stores amount, counterparty, date, M-Pesa code, reason and optional proof. This foundation sends no payments or messages.</p></div>
+    </section>
+  </main>
 
-        // Form Event Handlers
-        document.getElementById('animalForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const success = await CloudSync.registerAnimal(
-                document.getElementById('regAnimalId').value.trim(),
-                document.getElementById('regBreed').value.trim(),
-                document.getElementById('regBirthDate').value,
-                document.getElementById('regStatus').value
-            );
-            if (success) { document.getElementById('animalForm').reset(); FarmDashboard.renderDashboardUI(); }
-        });
+  <nav class="bottom-nav" aria-label="Primary navigation">
+    <button type="button" data-nav="home">Home</button>
+    <button type="button" data-nav="animals">Animals</button>
+    <button type="button" data-nav="milk">Milk</button>
+    <button type="button" data-nav="health">Health</button>
+    <button type="button" data-nav="finance">Finance</button>
+  </nav>
 
-        document.getElementById('milkForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const success = await CloudSync.pushMilkLog(
-                document.getElementById('milkAnimalId').value.trim(),
-                parseFloat(document.getElementById('milkYield').value)
-            );
-            if (success) { document.getElementById('milkForm').reset(); FarmDashboard.renderDashboardUI(); }
-        });
-
-        document.getElementById('breedingForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const success = await CloudSync.pushBreedingLog(
-                document.getElementById('breedingAnimalId').value.trim(),
-                document.getElementById('breedingDate').value,
-                document.getElementById('expectedCalving').value
-            );
-            if (success) { document.getElementById('breedingForm').reset(); FarmDashboard.renderDashboardUI(); }
-        });
-
-        document.getElementById('healthForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const success = await CloudSync.pushHealthLog(
-                document.getElementById('healthAnimalId').value.trim(),
-                document.getElementById('treatmentType').value,
-                document.getElementById('healthDesc').value.trim(),
-                document.getElementById('treatmentDate').value,
-                parseFloat(document.getElementById('healthCost').value || 0)
-            );
-            if (success) { document.getElementById('healthForm').reset(); FarmDashboard.renderDashboardUI(); }
-        });
-
-        document.getElementById('expenseForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const success = await CloudSync.pushExpenseLog(
-                document.getElementById('expenseCategory').value,
-                parseFloat(document.getElementById('expenseAmount').value),
-                document.getElementById('expenseDate').value,
-                document.getElementById('expenseNotes').value.trim()
-            );
-            if (success) { document.getElementById('expenseForm').reset(); FarmDashboard.renderDashboardUI(); }
-        });
-
-        // Animal 360 Profile Search Event Listener
-        document.getElementById('searchAnimalBtn').addEventListener('click', async () => {
-            const animalId = document.getElementById('searchAnimalId').value.trim();
-            if (!animalId) {
-                alert('Please enter an Animal ID.');
-                return;
-            }
-            await FarmDashboard.renderAnimalProfile(animalId);
-        });
-    </script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {}));
+    }
+  </script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
