@@ -18,6 +18,7 @@ export const APP_CONFIG = Object.freeze({
   }),
   cloud: Object.freeze({
     enabled: false,
+    farmId: null,
     supabaseUrl: "https://zdjcsdgkszmajvpvdrsk.supabase.co",
     supabaseAnonKey: null,
     supabaseJsCdn: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
