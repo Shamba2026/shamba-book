@@ -113,6 +113,8 @@ async function refreshAnimalData() {
 
 async function handleAnimalSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+
   try {
     const file = $("#animal-photo").files[0];
     const input = validateAnimal({
@@ -131,7 +133,7 @@ async function handleAnimalSubmit(event) {
     });
 
     await FarmRepository.saveAnimal(input, file);
-    event.currentTarget.reset();
+    form.reset();
     setStatus("Animal saved on this device.", "success");
     await refreshAnimalData();
     await refreshDashboard();
@@ -143,6 +145,8 @@ async function handleAnimalSubmit(event) {
 
 async function handleMilkSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+
   try {
     const input = validateMilk({
       animalId: $("#milk-animal").value,
@@ -152,7 +156,7 @@ async function handleMilkSubmit(event) {
     });
 
     await FarmRepository.saveMilkRecord(input);
-    event.currentTarget.reset();
+    form.reset();
     $("#milk-date").value = toLocalDateString();
     $("#milk-value-preview").textContent = "—";
     setStatus("Milk saved locally. " + input.liters + " L recorded for " + input.session + ".", "success");
@@ -165,6 +169,8 @@ async function handleMilkSubmit(event) {
 
 async function handleWeightSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+
   try {
     const input = validateWeight({
       animalId: $("#weight-animal").value,
@@ -173,7 +179,7 @@ async function handleWeightSubmit(event) {
     });
 
     await FarmRepository.saveWeightRecord(input);
-    event.currentTarget.reset();
+    form.reset();
     $("#weight-date").value = toLocalDateString();
     setStatus("Weight saved locally: " + input.kilograms + " kg.", "success");
   } catch (error) {
@@ -183,6 +189,8 @@ async function handleWeightSubmit(event) {
 
 async function handleBreedingSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+
   try {
     const animalId = $("#breeding-animal").value;
     const serviceDate = $("#breeding-date").value;
@@ -195,7 +203,7 @@ async function handleBreedingSubmit(event) {
       expectedCalving
     });
 
-    event.currentTarget.reset();
+    form.reset();
     setStatus("Breeding saved locally. Expected calving: " + expectedCalving + ".", "success");
   } catch (error) {
     setStatus(error.message, "error");
@@ -204,6 +212,8 @@ async function handleBreedingSubmit(event) {
 
 async function handleHealthSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+
   try {
     const animalId = $("#health-animal").value;
     const treatmentDate = $("#health-date").value;
@@ -221,7 +231,7 @@ async function handleHealthSubmit(event) {
       cost: Number($("#health-cost").value || 0)
     });
 
-    event.currentTarget.reset();
+    form.reset();
     $("#health-date").value = toLocalDateString();
     setStatus("Health record saved locally.", "success");
   } catch (error) {
