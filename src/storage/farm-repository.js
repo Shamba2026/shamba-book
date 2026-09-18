@@ -1,4 +1,4 @@
-import { get, getAll, put, putMany, deleteItem } from "./local-db.js";
+import { get, getAll, put, putMany } from "./local-db.js";
 
 function newId() {
   return crypto.randomUUID();
@@ -21,10 +21,25 @@ async function queue(record) {
   });
 }
 
+async function assertUniqueAnimalCode(animalCode, existingId = null) {
+  const animals = await getAll("animals");
+  const duplicate = animals.find(
+    (animal) =>
+      animal.animalCode.toLocaleLowerCase() === animalCode.toLocaleLowerCase() &&
+      animal.id !== existingId
+  );
+  if (duplicate) {
+    throw new Error('Animal name/ID "' + animalCode + '" is already registered on this device.');
+  }
+}
+
 export async function saveAnimal(animal, photoBlob) {
+  await assertUniqueAnimalCode(animal.animalCode, animal.id || null);
+
   const animalRecord = {
     ...animal,
     id: animal.id || newId(),
+    clientId: animal.clientId || newId(),
     kind: "animal",
     createdAt: animal.createdAt || now(),
     updatedAt: now(),
@@ -62,6 +77,7 @@ export async function getAnimal(animalId) {
 export async function saveMilkRecord(input) {
   const record = {
     id: newId(),
+    clientId: newId(),
     kind: "milk",
     animalId: input.animalId,
     localDate: input.localDate,
@@ -78,6 +94,7 @@ export async function saveMilkRecord(input) {
 export async function saveWeightRecord(input) {
   const record = {
     id: newId(),
+    clientId: newId(),
     kind: "weight",
     animalId: input.animalId,
     localDate: input.localDate,
@@ -91,7 +108,14 @@ export async function saveWeightRecord(input) {
 }
 
 export async function saveGenericRecord(kind, payload) {
-  const record = { id: newId(), kind, ...payload, createdAt: now(), updatedAt: now() };
+  const record = {
+    id: newId(),
+    clientId: newId(),
+    kind,
+    ...payload,
+    createdAt: now(),
+    updatedAt: now()
+  };
   await put("records", record);
   await queue(record);
   return record;
@@ -107,7 +131,8 @@ export async function getTodayMilkSummary(localDate) {
   const milk = records.filter((r) => r.kind === "milk" && r.localDate === localDate);
   const bySession = Object.fromEntries(["morning", "afternoon", "evening"].map((session) => [
     session,
-    milk.filter((row) => row.session === session).reduce((sum, row) => sum + Number(row.liters || 0), 0)
+    milk.filter((row) => row.session === session)
+      .reduce((sum, row) => sum + Number(row.liters || 0), 0)
   ]));
   return {
     totalLiters: Number(Object.values(bySession).reduce((sum, value) => sum + value, 0).toFixed(1)),
