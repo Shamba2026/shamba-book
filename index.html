@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shamba Book Farm Manager</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f6f8; color: #333; }
+    h1 { color: #2e7d32; }
+    .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input, select, button { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; }
+    button { background-color: #2e7d32; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 15px; }
+    button:hover { background-color: #1b5e20; }
+  </style>
+</head>
+<body>
+  <h1>Shamba Book Farm Manager</h1>
+
+  <!-- Milk Recording Form -->
+  <div class="card">
+    <h2>Record Milk Production</h2>
+    <form id="milking-form">
+      <label for="milk-animal-id">Animal ID:</label>
+      <input type="text" id="milk-animal-id" value="cow-102" required>
+
+      <label for="milk-amount">Yield (Liters):</label>
+      <input type="number" id="milk-amount" step="0.1" placeholder="e.g. 12.5" required>
+
+      <button type="submit">Save Milk Record</button>
+    </form>
+  </div>
+
+  <!-- Breeding Log Form -->
+  <div class="card">
+    <h2>Record Breeding Service</h2>
+    <form id="breeding-form">
+      <label for="breed-animal-id">Animal ID:</label>
+      <input type="text" id="breed-animal-id" value="cow-102" required>
+
+      <label for="breeding-date">Breeding Date:</label>
+      <input type="date" id="breeding-date" required>
+
+      <button type="submit">Save Breeding Record</button>
+    </form>
+  </div>
+
+  <!-- Supabase CDN & JS Files -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="biological-logic.js"></script>
+  <script src="supabase-sync.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Register Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .then(() => console.log('Service Worker Registered'))
+          .catch(err => console.error('Service Worker Error:', err));
+      });
+    }
+  </script>
+</body>
+</html>
