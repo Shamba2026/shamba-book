@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shamba Book Farm Manager</title>
+    <!-- PWA Manifest Link -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#27ae60">
     <!-- Supabase Client CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -24,7 +27,7 @@
     <h1>🐄 Shamba Book Farm Manager</h1>
     <p>Production-ready small-scale dairy management system ($0/month budget).</p>
 
-    <!-- Phase 9: Farm Intelligence Dashboard Summary -->
+    <!-- Farm Intelligence Dashboard Summary -->
     <div class="card">
         <h2>Farm Intelligence Summary</h2>
         <div class="stats-grid">
@@ -47,7 +50,16 @@
         </div>
     </div>
 
-    <!-- Phase 7: Register Animal Form -->
+    <!-- Animal 360° Profile Lookup Card -->
+    <div class="card">
+        <h2>Animal 360° Profile Lookup</h2>
+        <label>Animal ID:</label>
+        <input type="text" id="searchAnimalId" placeholder="e.g., cow-102">
+        <button type="button" id="searchAnimalBtn">View Profile</button>
+        <div id="animalProfileContainer" style="margin-top: 15px;"></div>
+    </div>
+
+    <!-- Register Animal Form -->
     <div class="card">
         <h2>Register New Animal</h2>
         <form id="animalForm">
@@ -94,7 +106,7 @@
         </form>
     </div>
 
-    <!-- Phase 8: Health Treatment Form -->
+    <!-- Health Treatment Form -->
     <div class="card">
         <h2>Record Health Treatment</h2>
         <form id="healthForm">
@@ -117,7 +129,7 @@
         </form>
     </div>
 
-    <!-- Phase 8: Expense Log Form -->
+    <!-- Expense Log Form -->
     <div class="card">
         <h2>Record Farm Expense</h2>
         <form id="expenseForm">
@@ -147,7 +159,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('service-worker.js')
-                    .then(reg => console.log('Service Worker Registered', reg))
+                    .then(reg => console.log('Service Worker Registered successfully', reg))
                     .catch(err => console.log('Service Worker registration failed', err));
             });
         }
@@ -204,6 +216,16 @@
                 document.getElementById('expenseNotes').value.trim()
             );
             if (success) { document.getElementById('expenseForm').reset(); FarmDashboard.renderDashboardUI(); }
+        });
+
+        // Animal 360 Profile Search Event Listener
+        document.getElementById('searchAnimalBtn').addEventListener('click', async () => {
+            const animalId = document.getElementById('searchAnimalId').value.trim();
+            if (!animalId) {
+                alert('Please enter an Animal ID.');
+                return;
+            }
+            await FarmDashboard.renderAnimalProfile(animalId);
         });
     </script>
 </body>
