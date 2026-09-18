@@ -1,5 +1,5 @@
 const SUPABASE_URL = 'https://zdjcsdgkszmajvpvdrsk.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkamNzZGdrc3ptYWp2cHZkcnNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MjkzODYsImV4cCI6MjEwNTMwNTM4Nn0.2R4r91pBRj6qOK2tRrSb1eaqxuCdmQ_bWv_nE6P9rgw';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkamNzZGdrc3ptYWp2cHZkcnNrIxlucm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MjkzODYsImV4cCI6MjEwNTMwNTM4Nn0.2R4r91pBRj6qOK2tRrSb1eaqxuCdmQ_bWv_nE6P9rgw';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -131,5 +131,59 @@ class CloudSync {
     console.log('Successfully synced expense log to Supabase Cloud!');
     alert('Success! Farm expense recorded to cloud database.');
     return true;
+  }
+
+  // --- INDIVIDUAL ANIMAL 360° PROFILE QUERY ---
+  static async getAnimalProfile(animalId) {
+    if (!navigator.onLine) {
+      console.log('Offline: Cannot fetch remote animal profile.');
+      return null;
+    }
+
+    try {
+      const { data: animal, error: animalError } = await supabaseClient
+        .from('animals')
+        .select('*')
+        .eq('animal_id', animalId)
+        .single();
+
+      if (animalError) throw animalError;
+      if (!animal) return null;
+
+      const { data: milkLogs, error: milkError } = await supabaseClient
+        .from('milk_logs')
+        .select('*')
+        .eq('animal_id', animalId)
+        .order('created_at', { ascending: false });
+
+      if (milkError) throw milkError;
+
+      const { data: breedingLogs, error: breedingError } = await supabaseClient
+        .from('breeding_logs')
+        .select('*')
+        .eq('animal_id', animalId)
+        .order('breeding_date', { ascending: false });
+
+      if (breedingError) throw breedingError;
+
+      const { data: healthLogs, error: healthError } = await supabaseClient
+        .from('health_logs')
+        .select('*')
+        .eq('animal_id', animalId)
+        .order('treatment_date', { ascending: false });
+
+      if (healthError) throw healthError;
+
+      return {
+        animal: animal,
+        milkLogs: milkLogs || [],
+        breedingLogs: breedingLogs || [],
+        healthLogs: healthLogs || []
+      };
+
+    } catch (error) {
+      console.error('Error fetching animal 360 profile:', error.message);
+      return null;
+    }
   }
 }
