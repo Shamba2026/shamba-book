@@ -2,7 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
 import * as FarmRepository from "./storage/farm-repository.js";
-import { ensureClient } from "./cloud/supabase-adapter.js";
+import { getAuthClient } from "./auth.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -248,7 +248,7 @@ async function initAuth() {
   const signOutButton = $("#auth-sign-out");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton) return;
 
-  const client = await ensureClient();
+  const client = await getAuthClient();
 
   async function refreshAuthState(message = "") {
     const { data } = await client.auth.getSession();
