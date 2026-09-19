@@ -1,4 +1,4 @@
-const CACHE_NAME = "ngombe-herdbook-shell-v11";
+const CACHE_NAME = "ngombe-herdbook-shell-v12";
 const ASSETS = [
   "./","./index.html","./manifest.json","./styles/app.css",
   "./src/main.js","./src/ui.js","./src/auth.js","./src/config.js",
@@ -29,6 +29,8 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
   const isAppShellRequest =
     event.request.mode === "navigate" ||
     url.pathname.endsWith("/index.html") ||
