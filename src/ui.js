@@ -13,6 +13,9 @@ function setAppAccess(unlocked) {
     el.classList.toggle("auth-unlocked", unlocked);
     if (el.matches("[data-view]")) {
       el.hidden = !unlocked || el.dataset.view !== "home";
+      el.style.setProperty("display", unlocked && el.dataset.view === "home" ? "block" : "none", "important");
+    } else if (el.classList.contains("bottom-nav")) {
+      el.style.setProperty("display", unlocked ? "grid" : "none", "important");
     }
   });
   const lockMessage = $("#auth-lock-message");
