@@ -16,6 +16,20 @@
       <div id="app-status" class="status-pill">Starting…</div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
+    <section class="card" style="margin:16px 0" aria-label="Cloud account">
+      <div class="section-head">
+        <div>
+          <h2>Cloud account</h2>
+          <div id="auth-status" class="muted">Checking…</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label for="auth-email">Email</label><input id="auth-email" type="email" autocomplete="username" placeholder="farm owner email"></div>
+        <div class="field"><label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" placeholder="password"></div>
+        <div class="field"><button id="auth-sign-in" class="primary" type="button">Sign in</button></div>
+        <div class="field"><button id="auth-sign-out" type="button" hidden>Sign out</button></div>
+      </div>
+    </section>
 
     <section data-view="home">
       <div class="card" style="margin-bottom:16px">
