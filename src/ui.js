@@ -247,7 +247,8 @@ async function initAuth() {
   const passwordEl = $("#auth-password");
   const signInButton = $("#auth-sign-in");
   const signOutButton = $("#auth-sign-out");
-  if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton) return;
+  const restoreButton = $("#auth-restore");
+  if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
   const client = await getAuthClient();
   let importedForSession = false;
@@ -262,6 +263,7 @@ async function initAuth() {
       emailEl.value = user.email || "";
       passwordEl.value = "";
       if (message) setStatus(message, "success");
+      restoreButton.hidden = false;
       if (!importedForSession) {
         importedForSession = true;
         try {
@@ -284,6 +286,7 @@ async function initAuth() {
       statusEl.textContent = "Not signed in — local/offline mode remains available.";
       signInButton.hidden = false;
       signOutButton.hidden = true;
+      restoreButton.hidden = true;
     }
   }
 
@@ -297,6 +300,27 @@ async function initAuth() {
       await refreshAuthState("Signed in to the farm cloud account.");
     } catch (error) {
       setStatus(error.message || "Could not sign in.", "error");
+    }
+  });
+
+  restoreButton.addEventListener("click", async () => {
+    try {
+      restoreButton.disabled = true;
+      importedForSession = true;
+      setStatus("Restoring cloud records to this device…", "info");
+      const snapshot = await pullFarmSnapshot();
+      const result = await FarmRepository.importCloudSnapshot(snapshot);
+      await refreshAnimalData();
+      await refreshDashboard();
+      setStatus(
+        "Cloud records restored: " + result.importedAnimals + " animals, " + result.importedRecords + " activity records.",
+        "success"
+      );
+    } catch (error) {
+      importedForSession = false;
+      setStatus("Cloud restore failed: " + (error.message || error), "error");
+    } finally {
+      restoreButton.disabled = false;
     }
   });
 
