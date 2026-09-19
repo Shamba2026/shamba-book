@@ -268,7 +268,11 @@ async function initAuth() {
   const restoreButton = $("#auth-restore");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
-  let client;
+  let clientPromise = null;
+  const getClient = () => {
+    if (!clientPromise) clientPromise = getAuthClient();
+    return clientPromise;
+  };
 
   const setSignedOut = () => {
     setAppAccess(false);
@@ -286,39 +290,25 @@ async function initAuth() {
     restoreButton.hidden = false;
     emailEl.value = user?.email || "";
     passwordEl.value = "";
+    setStatus("Signed in to the farm cloud account.", "success");
   };
 
-  try {
-    client = await getAuthClient();
-  } catch (error) {
-    statusEl.textContent = "Cloud account unavailable; local recording is still ready.";
-    setStatus("Local app ready. Cloud sign-in could not be loaded: " + (error.message || error), "error");
-    return;
-  }
-
-  const refreshAuthState = async (message = "") => {
-    const { data, error } = await client.auth.getSession();
-    if (error) throw error;
-    const user = data?.session?.user || null;
-    if (user) {
-      setSignedIn(user);
-      if (message) setStatus(message, "success");
-    } else {
-      setSignedOut();
-    }
-  };
+  setSignedOut();
 
   signInButton.addEventListener("click", async () => {
     try {
       signInButton.disabled = true;
+      statusEl.textContent = "Connecting to sign-in service…";
       const email = emailEl.value.trim();
       const password = passwordEl.value;
       if (!email || !password) throw new Error("Enter your email and password.");
+      const client = await getClient();
       const { error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      await refreshAuthState("Signed in to the farm cloud account.");
+      await refreshAuthState();
     } catch (error) {
-      setStatus(error.message || "Could not sign in.", "error");
+      setSignedOut();
+      setStatus("Sign-in failed: " + (error.message || error), "error");
     } finally {
       signInButton.disabled = false;
     }
@@ -342,20 +332,40 @@ async function initAuth() {
 
   signOutButton.addEventListener("click", async () => {
     try {
+      const client = await getClient();
       const { error } = await client.auth.signOut();
       if (error) throw error;
-      await refreshAuthState("Signed out. Local records remain available on this device.");
+      setSignedOut();
+      setStatus("Signed out. Farm features are locked.", "success");
     } catch (error) {
-      setStatus(error.message || "Could not sign out.", "error");
+      setStatus("Sign-out failed: " + (error.message || error), "error");
     }
   });
 
-  client.auth.onAuthStateChange((_event, session) => {
-    if (session?.user) setSignedIn(session.user);
+  const refreshAuthState = async () => {
+    const client = await getClient();
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    const user = data?.session?.user || null;
+    if (user) setSignedIn(user);
     else setSignedOut();
-  });
+  };
 
-  await refreshAuthState();
+  getClient().then(async (client) => {
+    client.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) setSignedIn(session.user);
+      else setSignedOut();
+    });
+    try {
+      await refreshAuthState();
+    } catch (error) {
+      statusEl.textContent = "Sign-in service unavailable; try Sign in again.";
+      setStatus("Authentication setup failed: " + (error.message || error), "error");
+    }
+  }).catch((error) => {
+    statusEl.textContent = "Sign-in service unavailable; try Sign in again.";
+    setStatus("Authentication setup failed: " + (error.message || error), "error");
+  });
 }
 async function refreshAll() {
   await refreshAnimalData();
