@@ -1,4 +1,4 @@
-const CACHE_NAME = "ngombe-herdbook-shell-v13";
+const CACHE_NAME = "ngombe-herdbook-shell-v14";
 const ASSETS = [
   "./","./index.html","./manifest.json","./styles/app.css",
   "./src/main.js","./src/ui.js","./src/auth.js","./src/config.js",
