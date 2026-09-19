@@ -3,6 +3,7 @@ import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkW
 import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
 import * as FarmRepository from "./storage/farm-repository.js";
 import { getAuthClient } from "./auth.js";
+import { pullFarmSnapshot } from "./cloud/supabase-adapter.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -249,6 +250,7 @@ async function initAuth() {
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton) return;
 
   const client = await getAuthClient();
+  let importedForSession = false;
 
   async function refreshAuthState(message = "") {
     const { data } = await client.auth.getSession();
@@ -260,7 +262,25 @@ async function initAuth() {
       emailEl.value = user.email || "";
       passwordEl.value = "";
       if (message) setStatus(message, "success");
+      if (!importedForSession) {
+        importedForSession = true;
+        try {
+          setStatus("Restoring cloud records to this device…", "info");
+          const snapshot = await pullFarmSnapshot();
+          const result = await FarmRepository.importCloudSnapshot(snapshot);
+          await refreshAnimalData();
+          await refreshDashboard();
+          setStatus(
+            "Cloud records restored: " + result.importedAnimals + " animals, " + result.importedRecords + " activity records.",
+            "success"
+          );
+        } catch (error) {
+          importedForSession = false;
+          setStatus("Signed in, but cloud restore failed: " + (error.message || error), "error");
+        }
+      }
     } else {
+      importedForSession = false;
       statusEl.textContent = "Not signed in — local/offline mode remains available.";
       signInButton.hidden = false;
       signOutButton.hidden = true;
