@@ -1,7 +1,7 @@
-const CACHE_NAME = "ngombe-herdbook-shell-v5";
+const CACHE_NAME = "ngombe-herdbook-shell-v6";
 const ASSETS = [
   "./","./index.html","./manifest.json","./styles/app.css",
-  "./src/main.js","./src/ui.js","./src/config.js",
+  "./src/main.js","./src/ui.js","./src/auth.js","./src/config.js",
   "./src/domain/farm-rules.js","./src/domain/validation.js",
   "./src/storage/local-db.js","./src/storage/farm-repository.js",
   "./src/cloud/supabase-adapter.js","./src/sync/sync-engine.js"
