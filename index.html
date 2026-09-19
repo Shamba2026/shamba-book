@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f7a4d">
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
-  <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles/app.css">
+  <link rel="manifest" href="./manifest.json?v=10">
+  <link rel="stylesheet" href="./styles/app.css?v=10">
   <title>Ngombe Herdbook</title>
 </head>
 <body>
@@ -168,9 +168,9 @@
 
   <script>
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {}));
+      window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=10").catch(() => {}));
     }
   </script>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js?v=10"></script>
 </body>
 </html>
