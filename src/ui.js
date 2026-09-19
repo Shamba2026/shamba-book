@@ -2,6 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
 import * as FarmRepository from "./storage/farm-repository.js";
+import { ensureClient } from "./cloud/supabase-adapter.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -239,6 +240,59 @@ async function handleHealthSubmit(event) {
   }
 }
 
+async function initAuth() {
+  const statusEl = $("#auth-status");
+  const emailEl = $("#auth-email");
+  const passwordEl = $("#auth-password");
+  const signInButton = $("#auth-sign-in");
+  const signOutButton = $("#auth-sign-out");
+  if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton) return;
+
+  const client = await ensureClient();
+
+  async function refreshAuthState(message = "") {
+    const { data } = await client.auth.getSession();
+    const user = data?.session?.user || null;
+    if (user) {
+      statusEl.textContent = "Signed in";
+      signInButton.hidden = true;
+      signOutButton.hidden = false;
+      emailEl.value = user.email || "";
+      passwordEl.value = "";
+      if (message) setStatus(message, "success");
+    } else {
+      statusEl.textContent = "Not signed in — local/offline mode remains available.";
+      signInButton.hidden = false;
+      signOutButton.hidden = true;
+    }
+  }
+
+  signInButton.addEventListener("click", async () => {
+    try {
+      const email = emailEl.value.trim();
+      const password = passwordEl.value;
+      if (!email || !password) throw new Error("Enter your email and password.");
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await refreshAuthState("Signed in to the farm cloud account.");
+    } catch (error) {
+      setStatus(error.message || "Could not sign in.", "error");
+    }
+  });
+
+  signOutButton.addEventListener("click", async () => {
+    try {
+      const { error } = await client.auth.signOut();
+      if (error) throw error;
+      await refreshAuthState("Signed out. Local records remain available on this device.");
+    } catch (error) {
+      setStatus(error.message || "Could not sign out.", "error");
+    }
+  });
+
+  await refreshAuthState();
+}
+
 async function refreshAll() {
   await refreshAnimalData();
   await refreshDashboard();
@@ -257,6 +311,8 @@ export async function initApp() {
   document.querySelectorAll("[data-nav-action]").forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.navAction));
   });
+
+  await initAuth();
 
   $("#animal-form").addEventListener("submit", handleAnimalSubmit);
   $("#milk-form").addEventListener("submit", handleMilkSubmit);
