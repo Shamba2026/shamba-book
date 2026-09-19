@@ -363,6 +363,7 @@ async function refreshAll() {
 }
 
 export async function initApp() {
+  setAppAccess(false);
   showView("home");
   $("#milk-date").value = toLocalDateString();
   $("#weight-date").value = toLocalDateString();
@@ -376,7 +377,9 @@ export async function initApp() {
     button.addEventListener("click", () => showView(button.dataset.navAction));
   });
 
-  await initAuth();
+  initAuth().catch((error) => {
+    setStatus("Sign-in service unavailable. Local farm features remain locked.", "error");
+  });
 
   $("#animal-form").addEventListener("submit", handleAnimalSubmit);
   $("#milk-form").addEventListener("submit", handleMilkSubmit);
