@@ -3,7 +3,7 @@ import { get } from "../storage/local-db.js";
 
 let clientPromise = null;
 
-async function ensureClient() {
+export async function ensureClient() {
   if (!APP_CONFIG.cloud.enabled) {
     throw new Error("Cloud sync is disabled until the secure Supabase schema, RLS and auth configuration is verified.");
   }
