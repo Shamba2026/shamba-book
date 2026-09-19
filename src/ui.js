@@ -381,12 +381,14 @@ export async function initApp() {
       : "—";
   });
 
-  await refreshAll();
+  setStatus("Ready. Records save on this device first.", "success");
+
+  refreshAll().catch((error) => {
+    setStatus("App opened, but local records could not be refreshed: " + (error.message || error), "error");
+  });
 
   startSyncLoop(async () => {
     await refreshDashboard();
     if (navigator.onLine && APP_CONFIG.cloud.enabled) setStatus("Cloud sync attempted.", "info");
   });
-
-  setStatus("Ready. Records save on this device first.", "success");
 }
