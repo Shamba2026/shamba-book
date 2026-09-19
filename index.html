@@ -169,38 +169,41 @@
 
   <script>
     (async () => {
+      const cleanupKey = "ngombe-herdbook-sw-cleanup";
       try {
-        const registrations = "serviceWorker" in navigator
-          ? await navigator.serviceWorker.getRegistrations()
-          : [];
-        if (registrations.length) {
-          await Promise.all(registrations.map((registration) => registration.unregister()));
-          if ("caches" in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map((key) => caches.delete(key)));
+        if ("serviceWorker" in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          if (registrations.length) {
+            await Promise.all(registrations.map((registration) => registration.unregister()));
+            if ("caches" in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((key) => caches.delete(key)));
+            }
+            if (!sessionStorage.getItem(cleanupKey)) {
+              sessionStorage.setItem(cleanupKey, "1");
+              location.reload();
+              return;
+            }
+            sessionStorage.removeItem(cleanupKey);
           }
-          if (!sessionStorage.getItem("ngombe-sw-reset")) {
-            sessionStorage.setItem("ngombe-sw-reset", "1");
-            location.reload();
-            return;
-          }
-          sessionStorage.removeItem("ngombe-sw-reset");
         }
       } catch (error) {
-        console.warn("Service worker cleanup skipped:", error);
+        console.warn("Legacy cache cleanup failed:", error);
       }
+
+      const script = document.createElement("script");
+      script.type = "module";
+      script.src = "./src/main.js?build=20260920-01";
+      script.onerror = () => {
+        const fatal = document.querySelector("#fatal-error");
+        if (fatal) {
+          fatal.hidden = false;
+          fatal.textContent = "App startup error: could not load the current application build.";
+        }
+        const status = document.querySelector("#app-status");
+        if (status) status.textContent = "Startup error";
+      };
+      document.body.appendChild(script);
     })();
-  </script>
-  <script type="module">
-    import("./src/main.js?v=17").catch((error) => {
-      const fatal = document.querySelector("#fatal-error");
-      if (fatal) {
-        fatal.hidden = false;
-        fatal.textContent = "App startup error: " + (error?.message || error);
-      }
-      const status = document.querySelector("#app-status");
-      if (status) status.textContent = "Startup error";
-    });
-  </script>
-</body>
+  </script></body>
 </html>
