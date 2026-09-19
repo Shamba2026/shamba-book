@@ -1,4 +1,5 @@
 import { APP_CONFIG } from "../config.js";
+import { get } from "../storage/local-db.js";
 
 let clientPromise = null;
 
@@ -36,7 +37,7 @@ const TABLES = Object.freeze({
   animal: "animals",
   milk: "milk_logs",
   weight: "weight_logs",
-  breeding: "breeding_events",
+  breeding: "breeding_logs",
   health: "health_logs",
   expense: "expense_logs",
   income: "income_logs",
@@ -54,7 +55,13 @@ const REQUIRED = Object.freeze({
   payment: ["payment_type", "amount", "payment_date"]
 });
 
-export function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
+async function resolveAnimalCode(animalId) {
+  if (!animalId) return animalId;
+  const animal = await get("animals", animalId);
+  return animal?.animalCode || animalId;
+}
+
+export async function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
   if (!farmId) throw new Error("Farm ID is required for cloud synchronization.");
 
   const common = {
@@ -83,20 +90,20 @@ export function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
     },
     milk: {
       ...common,
-      animal_id: record.animalId,
+      animal_id: await resolveAnimalCode(record.animalId),
       local_date: record.localDate,
       session: record.session,
       yield_liters: record.liters
     },
     weight: {
       ...common,
-      animal_id: record.animalId,
+      animal_id: await resolveAnimalCode(record.animalId),
       local_date: record.localDate,
       kilograms: record.kilograms
     },
     breeding: {
       ...common,
-      animal_id: record.animalId,
+      animal_id: await resolveAnimalCode(record.animalId),
       event_type: record.eventType || "service",
       event_date: record.eventDate || record.serviceDate,
       expected_calving: record.expectedCalving || null,
@@ -105,7 +112,7 @@ export function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
     },
     health: {
       ...common,
-      animal_id: record.animalId,
+      animal_id: await resolveAnimalCode(record.animalId),
       treatment_type: record.treatmentType,
       description: record.description || null,
       treatment_date: record.treatmentDate,
@@ -158,7 +165,8 @@ export function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
 export async function push(record) {
   const client = await ensureClient();
   const table = TABLES[record.kind];
-  const payload = toCloudPayload(record);
+  if (!table) throw new Error("Cloud table is not configured for record type " + record.kind + ".");
+  const payload = await toCloudPayload(record);
   const { error } = await client.from(table).upsert(payload, { onConflict: "client_id" });
   if (error) throw error;
   return true;
