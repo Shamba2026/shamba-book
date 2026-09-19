@@ -16,6 +16,7 @@
       <div id="app-status" class="status-pill">Starting…</div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
+    <div id="auth-lock-message" class="card auth-lock-message" style="margin:16px 0" hidden><h2>Sign in required</h2><p class="muted">Sign in to access your farm records and management tools.</p></div>
     <section class="card" style="margin:16px 0" aria-label="Cloud account">
       <div class="section-head">
         <div>
@@ -32,7 +33,7 @@
       </div>
     </section>
 
-    <section data-view="home">
+    <section data-view="home" class="auth-gated">
       <div class="card" style="margin-bottom:16px">
         <div class="section-head"><div><h2>Today</h2><div class="muted" id="today-date"></div></div><div class="notice">Local-first recording is active.</div></div>
         <div class="grid stats">
@@ -62,7 +63,7 @@
       <div class="card"><div class="section-head"><h3>Sync status</h3><span id="sync-count" class="chip">0</span></div><div class="muted">Pending local records stay on this device until secure cloud synchronization is enabled.</div></div>
     </section>
 
-    <section data-view="animals" hidden>
+    <section data-view="animals" class="auth-gated" hidden>
       <div class="grid two">
         <form id="animal-form" class="card">
           <div class="section-head"><h2>Add animal</h2></div>
@@ -101,7 +102,7 @@
       </div>
     </section>
 
-    <section data-view="milk" hidden>
+    <section data-view="milk" class="auth-gated" hidden>
       <div class="grid two">
         <form id="milk-form" class="card">
           <div class="section-head"><h2>Record milk</h2></div>
@@ -138,7 +139,7 @@
       </form>
     </section>
 
-    <section data-view="health" hidden>
+    <section data-view="health" class="auth-gated" hidden>
       <form id="health-form" class="card">
         <div class="section-head"><h2>Health & treatment</h2></div>
         <div class="form-grid">
@@ -152,13 +153,13 @@
       </form>
     </section>
 
-    <section data-view="finance" hidden>
+    <section data-view="finance" class="auth-gated" hidden>
       <div class="grid two"><div class="card"><h2>Income</h2><p class="muted">Milk sales and bull/animal sales are tracked separately from physical production records.</p></div><div class="card"><h2>Expenses</h2><p class="muted">Feed, veterinary, labour, maintenance and other farm expenses can carry evidence and payment references.</p></div></div>
       <div class="card" style="margin-top:16px"><h3>M-Pesa record keeping</h3><p class="muted">The target record stores amount, counterparty, date, M-Pesa code, reason and optional proof. This foundation sends no payments or messages.</p></div>
     </section>
   </main>
 
-  <nav class="bottom-nav" aria-label="Primary navigation">
+  <nav class="bottom-nav auth-gated" aria-label="Primary navigation">
     <button type="button" data-nav="home">Home</button>
     <button type="button" data-nav="animals">Animals</button>
     <button type="button" data-nav="milk">Milk</button>
