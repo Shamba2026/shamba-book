@@ -8,6 +8,21 @@ import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
 
+function setAppAccess(unlocked) {
+  document.querySelectorAll(".auth-gated").forEach((el) => {
+    el.classList.toggle("auth-unlocked", unlocked);
+    if (el.matches("[data-view]")) {
+      el.hidden = !unlocked || el.dataset.view !== "home";
+    }
+  });
+  const lockMessage = $("#auth-lock-message");
+  if (lockMessage) lockMessage.hidden = unlocked;
+  if (!unlocked) {
+    const status = $("#app-status");
+    if (status) status.textContent = "Sign in required";
+  }
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -253,13 +268,15 @@ async function initAuth() {
   let client;
 
   const setSignedOut = () => {
-    statusEl.textContent = "Not signed in — local/offline mode remains available.";
+    setAppAccess(false);
+    statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
     restoreButton.hidden = true;
   };
 
   const setSignedIn = (user) => {
+    setAppAccess(true);
     statusEl.textContent = "Signed in";
     signInButton.hidden = true;
     signOutButton.hidden = false;
