@@ -1,5 +1,6 @@
 import { APP_CONFIG } from "../config.js";
 import { get } from "../storage/local-db.js";
+import { getAuthClient } from "../auth.js";
 
 let clientPromise = null;
 
@@ -173,4 +174,39 @@ export async function push(record) {
   const { error } = await client.from(table).upsert(safePayload, { onConflict: conflictTarget });
   if (error) throw error;
   return true;
+}
+
+
+export async function pullFarmSnapshot() {
+  if (!APP_CONFIG.cloud.farmId) throw new Error("Farm ID is required for cloud import.");
+
+  const client = await getAuthClient();
+  const { data: authData, error: authError } = await client.auth.getSession();
+  if (authError) throw authError;
+  if (!authData.session?.user) throw new Error("Sign in before importing farm data.");
+
+  const farmId = APP_CONFIG.cloud.farmId;
+  const [farm, animals, milk, breeding, health, expense, weight] = await Promise.all([
+    client.from("farms").select("*").eq("id", farmId).maybeSingle(),
+    client.from("animals").select("*").eq("farm_id", farmId).order("animal_id"),
+    client.from("milk_logs").select("*").eq("farm_id", farmId).order("recorded_at"),
+    client.from("breeding_logs").select("*").eq("farm_id", farmId).order("event_date"),
+    client.from("health_logs").select("*").eq("farm_id", farmId).order("treatment_date"),
+    client.from("expense_logs").select("*").eq("farm_id", farmId).order("expense_date"),
+    client.from("weight_logs").select("*").eq("farm_id", farmId).order("local_date")
+  ]);
+
+  for (const result of [farm, animals, milk, breeding, health, expense, weight]) {
+    if (result.error) throw result.error;
+  }
+
+  return {
+    farm: farm.data || null,
+    animals: animals.data || [],
+    milk: milk.data || [],
+    breeding: breeding.data || [],
+    health: health.data || [],
+    expense: expense.data || [],
+    weight: weight.data || []
+  };
 }
