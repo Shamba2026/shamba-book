@@ -250,48 +250,47 @@ async function initAuth() {
   const restoreButton = $("#auth-restore");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
-  const client = await getAuthClient();
-  let importedForSession = false;
+  let client;
 
-  async function refreshAuthState(message = "") {
-    const { data } = await client.auth.getSession();
+  const setSignedOut = () => {
+    statusEl.textContent = "Not signed in — local/offline mode remains available.";
+    signInButton.hidden = false;
+    signOutButton.hidden = true;
+    restoreButton.hidden = true;
+  };
+
+  const setSignedIn = (user) => {
+    statusEl.textContent = "Signed in";
+    signInButton.hidden = true;
+    signOutButton.hidden = false;
+    restoreButton.hidden = false;
+    emailEl.value = user?.email || "";
+    passwordEl.value = "";
+  };
+
+  try {
+    client = await getAuthClient();
+  } catch (error) {
+    statusEl.textContent = "Cloud account unavailable; local recording is still ready.";
+    setStatus("Local app ready. Cloud sign-in could not be loaded: " + (error.message || error), "error");
+    return;
+  }
+
+  const refreshAuthState = async (message = "") => {
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
     const user = data?.session?.user || null;
     if (user) {
-      statusEl.textContent = "Signed in";
-      signInButton.hidden = true;
-      signOutButton.hidden = false;
-      emailEl.value = user.email || "";
-      passwordEl.value = "";
+      setSignedIn(user);
       if (message) setStatus(message, "success");
-      restoreButton.hidden = false;
-      if (!importedForSession) {
-        importedForSession = true;
-        try {
-          setStatus("Restoring cloud records to this device…", "info");
-          const snapshot = await pullFarmSnapshot();
-          const result = await FarmRepository.importCloudSnapshot(snapshot);
-          await refreshAnimalData();
-          await refreshDashboard();
-          setStatus(
-            "Cloud records restored: " + result.importedAnimals + " animals, " + result.importedRecords + " activity records.",
-            "success"
-          );
-        } catch (error) {
-          importedForSession = false;
-          setStatus("Signed in, but cloud restore failed: " + (error.message || error), "error");
-        }
-      }
     } else {
-      importedForSession = false;
-      statusEl.textContent = "Not signed in — local/offline mode remains available.";
-      signInButton.hidden = false;
-      signOutButton.hidden = true;
-      restoreButton.hidden = true;
+      setSignedOut();
     }
-  }
+  };
 
   signInButton.addEventListener("click", async () => {
     try {
+      signInButton.disabled = true;
       const email = emailEl.value.trim();
       const password = passwordEl.value;
       if (!email || !password) throw new Error("Enter your email and password.");
@@ -300,24 +299,21 @@ async function initAuth() {
       await refreshAuthState("Signed in to the farm cloud account.");
     } catch (error) {
       setStatus(error.message || "Could not sign in.", "error");
+    } finally {
+      signInButton.disabled = false;
     }
   });
 
   restoreButton.addEventListener("click", async () => {
     try {
       restoreButton.disabled = true;
-      importedForSession = true;
       setStatus("Restoring cloud records to this device…", "info");
       const snapshot = await pullFarmSnapshot();
       const result = await FarmRepository.importCloudSnapshot(snapshot);
       await refreshAnimalData();
       await refreshDashboard();
-      setStatus(
-        "Cloud records restored: " + result.importedAnimals + " animals, " + result.importedRecords + " activity records.",
-        "success"
-      );
+      setStatus("Cloud records restored: " + result.importedAnimals + " animals, " + result.importedRecords + " activity records.", "success");
     } catch (error) {
-      importedForSession = false;
       setStatus("Cloud restore failed: " + (error.message || error), "error");
     } finally {
       restoreButton.disabled = false;
@@ -334,9 +330,13 @@ async function initAuth() {
     }
   });
 
+  client.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) setSignedIn(session.user);
+    else setSignedOut();
+  });
+
   await refreshAuthState();
 }
-
 async function refreshAll() {
   await refreshAnimalData();
   await refreshDashboard();
