@@ -149,3 +149,139 @@ export async function getHerdSummary() {
     calves: animals.filter((a) => a.type === "calf").length
   };
 }
+
+
+function cloudAnimalToLocal(row, existing = null) {
+  return {
+    ...(existing || {}),
+    id: existing?.id || row.id,
+    clientId: row.client_id || existing?.clientId || row.id,
+    kind: "animal",
+    animalCode: row.animal_id,
+    type: row.type,
+    sex: row.sex || null,
+    breed: row.breed,
+    birthDate: row.birth_date || null,
+    acquiredDate: row.acquired_date || null,
+    source: row.source || null,
+    status: row.status || "active",
+    damId: row.dam_id || null,
+    sireId: row.sire_id || null,
+    rfid: row.rfid || null,
+    qrValue: row.qr_value || null,
+    notes: row.notes || "",
+    createdAt: row.created_at || existing?.createdAt || now(),
+    updatedAt: row.updated_at || existing?.updatedAt || now(),
+    photoAttachmentId: existing?.photoAttachmentId || null
+  };
+}
+
+function cloudRecordToLocal(kind, row, animalId, existing = null) {
+  const base = {
+    ...(existing || {}),
+    id: existing?.id || row.id,
+    clientId: row.client_id || existing?.clientId || row.id,
+    kind,
+    animalId,
+    createdAt: row.created_at || existing?.createdAt || now(),
+    updatedAt: row.updated_at || existing?.updatedAt || now()
+  };
+
+  if (kind === "milk") {
+    return {
+      ...base,
+      localDate: row.local_date || (row.recorded_at ? new Date(row.recorded_at).toISOString().slice(0, 10) : null),
+      session: row.session || null,
+      liters: Number(row.yield_liters)
+    };
+  }
+
+  if (kind === "weight") {
+    return {
+      ...base,
+      localDate: row.local_date,
+      kilograms: Number(row.kilograms)
+    };
+  }
+
+  if (kind === "breeding") {
+    return {
+      ...base,
+      serviceDate: row.event_date,
+      eventDate: row.event_date,
+      expectedCalving: row.expected_calving || null,
+      eventType: row.event_type || "service",
+      result: row.result || null,
+      notes: row.notes || ""
+    };
+  }
+
+  if (kind === "health") {
+    return {
+      ...base,
+      treatmentDate: row.treatment_date,
+      treatmentType: row.treatment_type,
+      description: row.description || "",
+      medicine: row.medicine || null,
+      dose: row.dose || null,
+      provider: row.provider || null,
+      withdrawalEndDate: row.withdrawal_end_date || null,
+      cost: Number(row.cost || 0)
+    };
+  }
+
+  if (kind === "expense") {
+    return {
+      ...base,
+      category: row.category,
+      amount: Number(row.amount),
+      expenseDate: row.expense_date,
+      notes: row.notes || "",
+      supplier: row.supplier || null
+    };
+  }
+
+  return base;
+}
+
+export async function importCloudSnapshot(snapshot) {
+  const localAnimals = await getAll("animals");
+  const localRecords = await getAll("records");
+  const localByCode = new Map(localAnimals.map((animal) => [animal.animalCode.toLowerCase(), animal]));
+  const localByClientId = new Map(localRecords.map((record) => [record.clientId, record]));
+  const animalIdByCode = new Map();
+
+  const importedAnimals = snapshot.animals.map((row) => {
+    const existing = localByCode.get(String(row.animal_id).toLowerCase());
+    const localAnimal = cloudAnimalToLocal(row, existing);
+    animalIdByCode.set(String(row.animal_id).toLowerCase(), localAnimal.id);
+    return localAnimal;
+  });
+
+  if (importedAnimals.length) await putMany("animals", importedAnimals);
+
+  const rows = [
+    ...snapshot.milk.map((row) => ["milk", row]),
+    ...snapshot.weight.map((row) => ["weight", row]),
+    ...snapshot.breeding.map((row) => ["breeding", row]),
+    ...snapshot.health.map((row) => ["health", row]),
+    ...snapshot.expense.map((row) => ["expense", row])
+  ];
+
+  const importedRecords = [];
+  for (const [kind, row] of rows) {
+    const animalId = animalIdByCode.get(String(row.animal_id || "").toLowerCase());
+    if (!animalId && kind !== "expense") continue;
+    const existing = localByClientId.get(row.client_id);
+    importedRecords.push(cloudRecordToLocal(kind, row, animalId || null, existing));
+  }
+
+  if (importedRecords.length) {
+    await putMany("records", importedRecords);
+  }
+
+  return {
+    importedAnimals: importedAnimals.length,
+    importedRecords: importedRecords.length
+  };
+}
