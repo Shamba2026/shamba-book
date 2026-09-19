@@ -72,7 +72,8 @@ export async function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
 
   const payloads = {
     animal: {
-      ...common,
+      farm_id: farmId,
+      client_id: record.clientId || record.id,
       animal_id: record.animalCode,
       rfid: record.rfid || null,
       qr_value: record.qrValue || null,
@@ -167,7 +168,9 @@ export async function push(record) {
   const table = TABLES[record.kind];
   if (!table) throw new Error("Cloud table is not configured for record type " + record.kind + ".");
   const payload = await toCloudPayload(record);
-  const { error } = await client.from(table).upsert(payload, { onConflict: "client_id" });
+  const conflictTarget = record.kind === "animal" ? "farm_id,animal_id" : "client_id";
+  const safePayload = record.kind === "animal" ? (() => { const { id, ...withoutId } = payload; return withoutId; })() : payload;
+  const { error } = await client.from(table).upsert(safePayload, { onConflict: conflictTarget });
   if (error) throw error;
   return true;
 }
