@@ -99,13 +99,13 @@ export function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
     },
     weight: {
       ...common,
-      animal_id: await resolveAnimalCode(record.animalId),
+      animal_id: record.animalId,
       local_date: record.localDate,
       kilograms: record.kilograms
     },
     breeding: {
       ...common,
-      animal_id: await resolveAnimalCode(record.animalId),
+      animal_id: record.animalId,
       event_type: record.eventType || "service",
       event_date: record.eventDate || record.serviceDate,
       expected_calving: record.expectedCalving || null,
@@ -114,7 +114,7 @@ export function toCloudPayload(record, farmId = APP_CONFIG.cloud.farmId) {
     },
     health: {
       ...common,
-      animal_id: await resolveAnimalCode(record.animalId),
+      animal_id: record.animalId,
       treatment_type: record.treatmentType,
       description: record.description || null,
       treatment_date: record.treatmentDate,
