@@ -19,7 +19,10 @@ function setAppAccess(unlocked) {
     }
   });
   const lockMessage = $("#auth-lock-message");
-  if (lockMessage) lockMessage.hidden = unlocked;
+  if (lockMessage) {
+    lockMessage.hidden = unlocked;
+    lockMessage.style.setProperty("display", unlocked ? "none" : "block", "important");
+  }
   if (!unlocked) {
     const status = $("#app-status");
     if (status) status.textContent = "Sign in required";
@@ -43,7 +46,9 @@ function setStatus(message, tone = "info") {
 
 function showView(viewName) {
   document.querySelectorAll("[data-view]").forEach((section) => {
-    section.hidden = section.dataset.view !== viewName;
+    const active = section.classList.contains("auth-unlocked") && section.dataset.view === viewName;
+    section.hidden = !active;
+    section.style.setProperty("display", active ? "block" : "none", "important");
   });
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.classList.toggle("active", button.dataset.nav === viewName);
