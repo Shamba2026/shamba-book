@@ -135,7 +135,7 @@ try {
   await page.locator("#auth-email").fill("synthetic@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#auth-sign-out:not([hidden])").waitFor();
+  await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
   assert.equal(await page.locator('[data-view="home"]').isVisible(), true);
   await page.locator('button[data-nav="animals"]').click();
@@ -154,7 +154,7 @@ try {
   const id = await localState(page);
 
   await page.reload();
-  await page.locator("#auth-sign-out:not([hidden])").waitFor();
+  await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false);
   await visibleAnimal(page);
   await localState(page, id);
@@ -163,7 +163,7 @@ try {
   page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(origin);
-  await page.locator("#auth-sign-out:not([hidden])").waitFor();
+  await page.locator("#account-actions:not([hidden])").waitFor();
   await visibleAnimal(page);
   await localState(page, id);
 
@@ -181,7 +181,7 @@ try {
   await page.locator("#auth-email").fill("synthetic@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#auth-sign-out:not([hidden])").waitFor();
+  await page.locator("#account-actions:not([hidden])").waitFor();
   await visibleAnimal(page);
   await localState(page, id);
   await page.locator('button[data-nav="milk"]').click();
