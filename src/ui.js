@@ -3,7 +3,6 @@ import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkW
 import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
 import * as FarmRepository from "./storage/farm-repository.js?build=20260921-03";
 import { getAuthClient } from "./auth.js";
-import { pullFarmSnapshot } from "./cloud/supabase-adapter.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -380,7 +379,8 @@ async function initAuth() {
     statusEl.textContent = "Signed in";
     signInButton.hidden = true;
     signOutButton.hidden = false;
-    restoreButton.hidden = false;
+    restoreButton.hidden = true;
+    restoreButton.disabled = true;
     emailEl.value = user?.email || "";
     passwordEl.value = "";
     setStatus("Signed in to the farm cloud account.", "success");
@@ -407,22 +407,6 @@ async function initAuth() {
       setStatus("Sign-in failed: " + (error.message || error), "error");
     } finally {
       signInButton.disabled = false;
-    }
-  });
-
-  restoreButton.addEventListener("click", async () => {
-    try {
-      restoreButton.disabled = true;
-      setStatus("Restoring cloud records to this device…", "info");
-      const snapshot = await pullFarmSnapshot();
-      const result = await FarmRepository.importCloudSnapshot(snapshot);
-      await refreshAnimalData();
-      await refreshDashboard();
-      setStatus("Cloud records restored: " + result.importedAnimals + " animals, " + result.importedRecords + " activity records.", "success");
-    } catch (error) {
-      setStatus("Cloud restore failed: " + (error.message || error), "error");
-    } finally {
-      restoreButton.disabled = false;
     }
   });
 
