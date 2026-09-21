@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -10,6 +10,7 @@ import { APP_CONFIG } from "../src/config.js";
 // Farm storage, validation, UI and sync modules are served unchanged from the repository.
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const animalCode = "TEST-BROWSER-LOCAL-FIRST-001";
+const artifactDir = path.join(root, "test-artifacts");
 const authModule = `
 const key = "ngombe-isolated-browser-test-auth";
 const user = { id: "isolated-test-user", email: "synthetic@example.invalid" };
@@ -138,6 +139,8 @@ try {
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
   assert.equal(await page.locator('[data-view="home"]').isVisible(), true);
+  await mkdir(artifactDir, { recursive: true });
+  await page.screenshot({ path: path.join(artifactDir, "home-desktop.png"), fullPage: true });
   await page.locator('button[data-nav="animals"]').click();
   await page.locator("#animal-code").fill(animalCode);
   await page.locator("#animal-type").selectOption("dairy_cow");
@@ -207,6 +210,9 @@ try {
   await page.locator('[data-milk-session="evening"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no evening record"));
   assert.match(await page.locator("#milk-checklist-summary").textContent(), /no evening record/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: path.join(artifactDir, "milk-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.locator("#milk-animal").selectOption(id);
   await page.locator("#milk-liters").fill("2.5");
   await page.locator('#milk-form button[type="submit"]').click();
