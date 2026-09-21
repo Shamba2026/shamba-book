@@ -1,4 +1,4 @@
-import { get, getAll, putAtomically, putMany } from "./local-db.js";
+import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260921-03";
 
 function newId() {
   return crypto.randomUUID();
