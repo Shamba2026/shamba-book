@@ -136,9 +136,11 @@ try {
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await page.locator("#auth-sign-out:not([hidden])").waitFor();
+  assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
+  assert.equal(await page.locator('[data-view="home"]').isVisible(), true);
   await page.locator('button[data-nav="animals"]').click();
   await page.locator("#animal-code").fill(animalCode);
-  await page.locator("#animal-type").selectOption("other");
+  await page.locator("#animal-type").selectOption("dairy_cow");
   await page.locator("#animal-breed").fill("SYNTHETIC-TEST-NOT-REAL");
   await page.locator("#animal-source").fill("Automated local-only test");
   await page.locator("#animal-notes").fill("Synthetic browser test, never a real farm animal.");
@@ -153,6 +155,7 @@ try {
 
   await page.reload();
   await page.locator("#auth-sign-out:not([hidden])").waitFor();
+  assert.equal(await page.locator("#auth-card").isVisible(), false);
   await visibleAnimal(page);
   await localState(page, id);
 
@@ -164,8 +167,10 @@ try {
   await visibleAnimal(page);
   await localState(page, id);
 
+  await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await page.locator("#auth-card").isVisible(), true);
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
   assert.equal(await page.locator("#animal-list").textContent(), "");
   assert.equal(await page.locator("#profile-photo").getAttribute("src"), null);
@@ -179,6 +184,23 @@ try {
   await page.locator("#auth-sign-out:not([hidden])").waitFor();
   await visibleAnimal(page);
   await localState(page, id);
+  await page.locator('button[data-nav="milk"]').click();
+  assert.match(await page.locator("#milk-checklist-summary").textContent(), /1 of 1 active dairy cows have no morning record/);
+  await page.locator('[data-milk-session="evening"]').click();
+  assert.match(await page.locator("#milk-checklist-summary").textContent(), /no evening record/);
+  await page.locator("#milk-animal").selectOption(id);
+  await page.locator("#milk-liters").fill("2.5");
+  await page.locator('#milk-form button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector("#milk-checklist")?.textContent.includes("1 recorded"));
+  assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening").length, 1);
+  assert.equal((await storedRows(page, "sync_queue")).length, 2);
+  await page.locator('[data-milk-session="morning"]').click();
+  await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no morning record"));
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await page.locator("#milk-checklist").textContent(), "");
+  assert.equal(await page.locator("body").textContent().then((text) => text.includes(animalCode)), false);
   assert.deepEqual(externalRequests, [], "test must not contact cloud or other external origins");
   assert.deepEqual(pageErrors, [], "application must not throw uncaught errors");
   console.log("local-first.browser.test.js: PASS");

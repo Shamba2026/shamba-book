@@ -36,7 +36,7 @@ const get = (selector) => {
   if (!nodes.has(selector)) nodes.set(selector, element());
   return nodes.get(selector);
 };
-const views = ["home", "animals", "milk", "health", "finance"].map((name) => {
+const views = ["home", "animals", "milk", "weight", "breeding", "health", "finance"].map((name) => {
   const node = element(); node.dataset.view = name; return node;
 });
 const nav = element();
@@ -45,7 +45,7 @@ let authChanged;
 let syncCallback;
 let animalRead = Promise.resolve([]);
 let dashboardRead = Promise.resolve({ total: 0, dairyCows: 0, bulls: 0, calves: 0 });
-const animal = { id: "retained-test-id", animalCode: "TEST-B1A-20260921-001", type: "other", breed: "SYNTHETIC-TEST-NOT-REAL" };
+const animal = { id: "retained-test-id", animalCode: "TEST-B1A-20260921-001", type: "dairy_cow", status: "active", breed: "SYNTHETIC-TEST-NOT-REAL" };
 const client = {
   auth: {
     onAuthStateChange(callback) { authChanged = callback; },
@@ -69,6 +69,7 @@ const context = vm.createContext({
     listAnimals: () => animalRead,
     getHerdSummary: () => dashboardRead,
     getTodayMilkSummary: async () => ({ totalLiters: 0 }),
+    listMilkRecordsForDate: async () => [],
     getPendingSyncCount: async () => 1,
     getAnimal: async () => ({ animal, photo: {} })
   },
@@ -100,6 +101,7 @@ authChanged("SIGNED_IN", { user: { id: "test-user" } });
 await tick();
 assert.match(farmText(), /TEST-B1A-20260921-001/);
 assert.equal(get("#stat-total").textContent, 1);
+assert.match(get("#milk-checklist-summary").textContent, /1 of 1 active dairy cows have no morning record/);
 await context.app.openAnimal(animal.id);
 assert.equal(get("#profile-name").textContent, animal.animalCode);
 assert.equal(get("#profile-photo").src, "blob:test-photo");
@@ -111,6 +113,7 @@ assert.equal(get("#profile-photo").src, "");
 assert.equal(get("#stat-total").textContent, "0");
 assert.equal(get("#sync-count").textContent, "0");
 assert.equal(get("#animal-form").value, "", "sign-out must clear incomplete form entries");
+assert.equal(get("#milk-checklist").innerHTML, "", "sign-out must clear the milk checklist");
 assert.equal(views.every((view) => view.hidden && view.style.getPropertyValue("display") === "none"), true);
 
 const lateAnimals = deferred();
