@@ -1,4 +1,4 @@
-import { get, getAll, put, putMany } from "./local-db.js";
+import { get, getAll, putAtomically, putMany } from "./local-db.js";
 
 function newId() {
   return crypto.randomUUID();
@@ -8,8 +8,8 @@ function now() {
   return new Date().toISOString();
 }
 
-async function queue(record) {
-  await put("sync_queue", {
+function queuedRecord(record) {
+  return {
     id: record.id,
     recordType: record.kind || "animal",
     recordId: record.id,
@@ -18,7 +18,7 @@ async function queue(record) {
     createdAt: now(),
     updatedAt: now(),
     payload: structuredClone(record)
-  });
+  };
 }
 
 async function assertUniqueAnimalCode(animalCode, existingId = null) {
@@ -56,9 +56,11 @@ export async function saveAnimal(animal, photoBlob) {
     blob: photoBlob
   };
 
-  await putMany("animals", [animalRecord]);
-  await put("attachments", attachment);
-  await queue(animalRecord);
+  await putAtomically([
+    { storeName: "animals", value: animalRecord },
+    { storeName: "attachments", value: attachment },
+    { storeName: "sync_queue", value: queuedRecord(animalRecord) }
+  ]);
   return animalRecord;
 }
 
@@ -86,8 +88,10 @@ export async function saveMilkRecord(input) {
     createdAt: now(),
     updatedAt: now()
   };
-  await put("records", record);
-  await queue(record);
+  await putAtomically([
+    { storeName: "records", value: record },
+    { storeName: "sync_queue", value: queuedRecord(record) }
+  ]);
   return record;
 }
 
@@ -102,8 +106,10 @@ export async function saveWeightRecord(input) {
     createdAt: now(),
     updatedAt: now()
   };
-  await put("records", record);
-  await queue(record);
+  await putAtomically([
+    { storeName: "records", value: record },
+    { storeName: "sync_queue", value: queuedRecord(record) }
+  ]);
   return record;
 }
 
@@ -116,8 +122,10 @@ export async function saveGenericRecord(kind, payload) {
     createdAt: now(),
     updatedAt: now()
   };
-  await put("records", record);
-  await queue(record);
+  await putAtomically([
+    { storeName: "records", value: record },
+    { storeName: "sync_queue", value: queuedRecord(record) }
+  ]);
   return record;
 }
 

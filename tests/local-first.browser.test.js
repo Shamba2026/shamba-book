@@ -153,6 +153,24 @@ try {
   await visibleAnimal(page);
   const id = await localState(page);
 
+  const rolledBack = await page.evaluate(async () => {
+    const { putAtomically } = await import("/src/storage/local-db.js");
+    try {
+      await putAtomically([
+        { storeName: "animals", value: { id: "TEST-ROLLBACK-ANIMAL" } },
+        { storeName: "attachments", value: { id: "TEST-ROLLBACK-PHOTO", blob: new Blob(["SYNTHETIC"]) } },
+        { storeName: "sync_queue", value: { id: "TEST-ROLLBACK-QUEUE", payload: () => {} } }
+      ]);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  assert.equal(rolledBack, true, "a failed queue write must abort all earlier local writes");
+  await localState(page, id);
+  assert.equal((await storedRows(page, "animals")).some((row) => row.id === "TEST-ROLLBACK-ANIMAL"), false);
+  assert.equal((await storedRows(page, "attachments")).some((row) => row.id === "TEST-ROLLBACK-PHOTO"), false);
+
   await page.reload();
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false);

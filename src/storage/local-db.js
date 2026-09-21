@@ -79,6 +79,25 @@ export async function putMany(storeName, values) {
   db.close();
 }
 
+export async function putAtomically(entries) {
+  if (!entries.length) return;
+  const db = await openLocalDatabase();
+  const transaction = db.transaction([...new Set(entries.map((entry) => entry.storeName))], "readwrite");
+  const completed = transactionComplete(transaction);
+  try {
+    for (const { storeName, value } of entries) {
+      transaction.objectStore(storeName).put(value);
+    }
+    await completed;
+  } catch (error) {
+    try { transaction.abort(); } catch { /* Transaction may already have aborted. */ }
+    await completed.catch(() => {});
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
 export async function get(storeName, key) {
   const db = await openLocalDatabase();
   const result = await requestResult(db.transaction(storeName, "readonly").objectStore(storeName).get(key));
