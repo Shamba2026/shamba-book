@@ -15,6 +15,8 @@ function clearFarmView() {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
+  $("#milk-checklist").replaceChildren();
+  $("#milk-checklist-summary").textContent = "";
   $("#animal-list").replaceChildren();
   $("#animals-empty").hidden = false;
   $("#animal-profile").hidden = true;
@@ -153,15 +155,43 @@ async function openAnimal(animalId) {
 }
 
 function populateAnimalSelectors(animals) {
-  const options = ['<option value="">Choose animal</option>']
-    .concat(animals.map((a) => '<option value="' + escapeHtml(a.id) + '">' +
+  const options = (rows) => ['<option value="">Choose animal</option>']
+    .concat(rows.map((a) => '<option value="' + escapeHtml(a.id) + '">' +
       escapeHtml(a.animalCode) + " — " + escapeHtml(animalTypeLabel(a.type)) + "</option>"))
     .join("");
+  $("#milk-animal").innerHTML = options(animals.filter((a) => a.type === "dairy_cow" && a.status === "active"));
+  $("#weight-animal").innerHTML = options(animals.filter((a) => a.type === "bull"));
+  $("#breeding-animal").innerHTML = options(animals.filter((a) => a.type === "dairy_cow"));
+  $("#health-animal").innerHTML = options(animals);
+}
 
-  ["#milk-animal", "#weight-animal", "#health-animal", "#breeding-animal"].forEach((selector) => {
-    const el = $(selector);
-    if (el) el.innerHTML = options;
+async function refreshMilkChecklist(generation = accessGeneration) {
+  if (!canShowFarmData(generation)) return;
+  const date = $("#milk-date").value || toLocalDateString();
+  const session = $("#milk-session").value;
+  const [animals, records] = await Promise.all([
+    FarmRepository.listAnimals(), FarmRepository.listMilkRecordsForDate(date)
+  ]);
+  if (!canShowFarmData(generation) || date !== $("#milk-date").value || session !== $("#milk-session").value) return;
+  const cows = animals.filter((a) => a.type === "dairy_cow" && a.status === "active");
+  const counts = new Map();
+  records.filter((row) => row.session === session).forEach((row) => counts.set(row.animalId, (counts.get(row.animalId) || 0) + 1));
+  const missing = cows.filter((cow) => !counts.has(cow.id)).length;
+  $("#milk-checklist-summary").textContent = date + ": " + missing + " of " + cows.length + " active dairy cows have no " + session + " record.";
+  $("#milk-checklist").innerHTML = cows.map((cow) => '<div class="session-row"><span>' + escapeHtml(cow.animalCode) + '</span><strong>' +
+    (counts.has(cow.id) ? counts.get(cow.id) + ' recorded' : 'No record') + '</strong></div>').join("");
+}
+
+function selectMilkSession(session) {
+  $("#milk-session").value = session;
+  const label = session[0].toUpperCase() + session.slice(1);
+  $("#milk-session-heading").textContent = "Record " + session + " milk";
+  $("#milk-checklist-heading").textContent = label + " records";
+  document.querySelectorAll("[data-milk-session]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.milkSession === session);
+    button.setAttribute("aria-pressed", String(button.dataset.milkSession === session));
   });
+  refreshMilkChecklist().catch((error) => setStatus("Milk records could not be checked: " + (error.message || error), "error"));
 }
 
 async function refreshAnimalData(generation = accessGeneration) {
@@ -170,6 +200,7 @@ async function refreshAnimalData(generation = accessGeneration) {
   if (!canShowFarmData(generation)) return;
   populateAnimalSelectors(animals);
   refreshAnimalList(animals);
+  await refreshMilkChecklist(generation);
 }
 
 async function handleAnimalSubmit(event) {
@@ -207,6 +238,7 @@ async function handleAnimalSubmit(event) {
 async function handleMilkSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const generation = accessGeneration;
 
   try {
     const input = validateMilk({
@@ -217,12 +249,16 @@ async function handleMilkSubmit(event) {
     });
 
     await FarmRepository.saveMilkRecord(input);
+    if (!canShowFarmData(generation)) return;
     form.reset();
-    $("#milk-date").value = toLocalDateString();
+    $("#milk-date").value = input.localDate;
+    $("#milk-session").value = input.session;
     $("#milk-value-preview").textContent = "—";
     setStatus("Milk saved locally. " + input.liters + " L recorded for " + input.session + ".", "success");
     await refreshDashboard();
-    showView("home");
+    if (!canShowFarmData(generation)) return;
+    selectMilkSession(input.session);
+    showView("milk");
   } catch (error) {
     setStatus(error.message, "error");
   }
@@ -307,6 +343,8 @@ async function initAuth() {
   const signInButton = $("#auth-sign-in");
   const signOutButton = $("#auth-sign-out");
   const restoreButton = $("#auth-restore");
+  const authCard = $("#auth-card");
+  const accountActions = $("#account-actions");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
   let clientPromise = null;
@@ -320,6 +358,10 @@ async function initAuth() {
     accessGeneration += 1;
     setAppAccess(false);
     clearFarmView();
+    selectMilkSession("morning");
+    authCard.hidden = false;
+    accountActions.hidden = true;
+    accountActions.open = false;
     statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
@@ -330,6 +372,8 @@ async function initAuth() {
     signedIn = true;
     const generation = ++accessGeneration;
     setAppAccess(true);
+    authCard.hidden = true;
+    accountActions.hidden = false;
     $("#milk-date").value = toLocalDateString();
     $("#weight-date").value = toLocalDateString();
     $("#health-date").value = toLocalDateString();
@@ -430,6 +474,7 @@ export async function initApp() {
   $("#milk-date").value = toLocalDateString();
   $("#weight-date").value = toLocalDateString();
   $("#health-date").value = toLocalDateString();
+  selectMilkSession("morning");
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.nav));
@@ -438,6 +483,11 @@ export async function initApp() {
   document.querySelectorAll("[data-nav-action]").forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.navAction));
   });
+
+  document.querySelectorAll("[data-milk-session]").forEach((button) => {
+    button.addEventListener("click", () => selectMilkSession(button.dataset.milkSession));
+  });
+  $("#milk-date").addEventListener("change", () => refreshMilkChecklist().catch((error) => setStatus(error.message, "error")));
 
   initAuth().catch((error) => {
     setStatus("Sign-in service unavailable. Local farm features remain locked.", "error");

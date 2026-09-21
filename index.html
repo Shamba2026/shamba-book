@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#1f7a4d">
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
   <link rel="manifest" href="./manifest.json?v=15">
-  <link rel="stylesheet" href="./styles/app.css?build=20260920-01">
+  <link rel="stylesheet" href="./styles/app.css?build=20260921-01">
   <style id="auth-critical-style">.auth-gated{display:none!important}.auth-lock-message{display:block}</style>
   <title>Ngombe Herdbook</title>
 </head>
@@ -14,11 +14,11 @@
   <main class="app-shell">
     <header class="header">
       <div class="brand"><h1>🐄 Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div>
-      <div id="app-status" class="status-pill">Starting…</div>
+      <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden>Restore cloud data</button></details></div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
     <div id="auth-lock-message" class="card auth-lock-message" style="margin:16px 0" hidden><h2>Sign in required</h2><p class="muted">Sign in to access your farm records and management tools.</p></div>
-    <section class="card" style="margin:16px 0" aria-label="Cloud account">
+    <section id="auth-card" class="card" style="margin:16px 0" aria-label="Cloud account">
       <div class="section-head">
         <div>
           <h2>Cloud account</h2>
@@ -29,8 +29,6 @@
         <div class="field"><label for="auth-email">Email</label><input id="auth-email" type="email" autocomplete="username" placeholder="farm owner email"></div>
         <div class="field"><label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" placeholder="password"></div>
         <div class="field"><button id="auth-sign-in" class="primary" type="button">Sign in</button></div>
-        <div class="field"><button id="auth-sign-out" type="button" hidden>Sign out</button></div>
-        <div class="field"><button id="auth-restore" type="button" hidden>Restore cloud data</button></div>
       </div>
     </section>
 
@@ -56,7 +54,8 @@
           <button class="action" type="button" data-nav-action="milk"><strong>🥛 Record milk</strong><span>Morning, afternoon or evening</span></button>
           <button class="action" type="button" data-nav-action="animals"><strong>🐄 Add animal</strong><span>Photo required</span></button>
           <button class="action" type="button" data-nav-action="health"><strong>🩺 Health record</strong><span>Treatment and cost</span></button>
-          <button class="action" type="button" data-nav-action="milk"><strong>⚖ Record bull weight</strong><span>Weight in kg</span></button>
+          <button class="action" type="button" data-nav-action="weight"><strong>⚖ Record bull weight</strong><span>Weight in kg</span></button>
+          <button class="action" type="button" data-nav-action="breeding"><strong>🐄 Record breeding</strong><span>Dairy service</span></button>
           <button class="action" type="button" data-nav-action="finance"><strong>💰 Finance</strong><span>Income and expenses</span></button>
         </div>
       </div>
@@ -104,21 +103,24 @@
     </section>
 
     <section data-view="milk" class="auth-gated" hidden>
+      <div class="card" style="margin-bottom:16px"><h2>Milking sessions</h2><p class="muted">Choose a session to see which active dairy cows have no record for the selected date. A missing record does not mean the cow was milked.</p><div class="session-tabs" role="group" aria-label="Milking session"><button type="button" data-milk-session="morning">Morning</button><button type="button" data-milk-session="afternoon">Afternoon</button><button type="button" data-milk-session="evening">Evening</button></div></div>
       <div class="grid two">
         <form id="milk-form" class="card">
-          <div class="section-head"><h2>Record milk</h2></div>
+          <div class="section-head"><h2 id="milk-session-heading">Record morning milk</h2></div>
           <div class="form-grid">
-            <div class="field full"><label for="milk-animal">Animal</label><select id="milk-animal" required></select></div>
-            <div class="field"><label for="milk-session">Milking</label><select id="milk-session"><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select></div>
+            <div class="field full"><label for="milk-animal">Dairy cow</label><select id="milk-animal" required></select></div>
+            <select id="milk-session" aria-label="Selected milking session" hidden><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select>
             <div class="field"><label for="milk-date">Date</label><input id="milk-date" type="date" required></div>
             <div class="field"><label for="milk-liters">Litres</label><input id="milk-liters" type="number" min="0.1" max="60" step="0.1" required></div>
             <div class="field"><label>Milk value</label><div id="milk-value-preview" style="padding:11px 12px;border:1px solid var(--line);border-radius:12px">—</div></div>
             <div class="field full"><button class="primary" type="submit">Save milk record</button></div>
           </div>
         </form>
-        <div class="card"><h2>Farm milk rule</h2><p>Milk is recorded per animal for morning, afternoon and evening.</p><p class="muted">Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday-Friday period.</p></div>
+        <div class="card"><h2 id="milk-checklist-heading">Morning records</h2><p id="milk-checklist-summary" class="muted">Loading local records…</p><div id="milk-checklist" class="animal-list"></div><p class="muted">A recorded cow can have multiple entries; review totals before adding another. Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday–Friday period.</p></div>
       </div>
+    </section>
 
+    <section data-view="weight" class="auth-gated" hidden>
       <form id="weight-form" class="card" style="margin-top:16px">
         <div class="section-head"><h2>Record bull weight</h2></div>
         <div class="form-grid">
@@ -128,7 +130,9 @@
           <div class="field"><button class="primary" type="submit">Save weight</button></div>
         </div>
       </form>
+    </section>
 
+    <section data-view="breeding" class="auth-gated" hidden>
       <form id="breeding-form" class="card" style="margin-top:16px">
         <div class="section-head"><h2>Record breeding service</h2></div>
         <div class="form-grid">
@@ -194,7 +198,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20260920-02";
+      script.src = "./src/main.js?build=20260921-01";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {

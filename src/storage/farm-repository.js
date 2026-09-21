@@ -140,6 +140,11 @@ export async function getTodayMilkSummary(localDate) {
   };
 }
 
+export async function listMilkRecordsForDate(localDate) {
+  const records = await getAll("records");
+  return records.filter((record) => record.kind === "milk" && record.localDate === localDate);
+}
+
 export async function getHerdSummary() {
   const animals = await listAnimals();
   return {
