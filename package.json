@@ -1,0 +1,12 @@
+{
+  "name": "ngombe-herdbook-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/farm-rules.test.js && node tests/cloud-mapping.test.js && node tests/auth-dom-boundary.test.js",
+    "test:browser": "node tests/local-first.browser.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
