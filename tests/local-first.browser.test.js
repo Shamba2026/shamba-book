@@ -102,7 +102,7 @@ async function localState(page, expectedId) {
   assert.equal(queue.length, 1);
   assert.equal(queue[0].status, "pending");
   assert.equal(queue[0].recordId, animals[0].id);
-  await page.locator("#sync-count").filter({ hasText: /^1$/ }).waitFor();
+  await page.waitForFunction(() => document.querySelector("#sync-count")?.textContent === "1");
   assert.equal(await page.locator("#sync-count").textContent(), "1");
   return animals[0].id;
 }
