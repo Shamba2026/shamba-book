@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1f7a4d">
+  <meta name="theme-color" content="#123e2d">
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
   <link rel="manifest" href="./manifest.json?v=15">
-  <link rel="stylesheet" href="./styles/app.css?build=20260921-01">
+  <link rel="stylesheet" href="./styles/app.css?build=20260921-02">
   <style id="auth-critical-style">.auth-gated{display:none!important}.auth-lock-message{display:block}</style>
   <title>Ngombe Herdbook</title>
 </head>
 <body>
   <main class="app-shell">
     <header class="header">
-      <div class="brand"><h1>🐄 Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">🐄</span><div><h1>Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div></div>
       <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden>Restore cloud data</button></details></div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
@@ -33,8 +33,8 @@
     </section>
 
     <section data-view="home" class="auth-gated">
-      <div class="card" style="margin-bottom:16px">
-        <div class="section-head"><div><h2>Today</h2><div class="muted" id="today-date"></div></div><div class="notice">Local-first recording is active.</div></div>
+      <div class="card home-hero">
+        <div class="section-head"><div><p class="eyebrow">YOUR FARM TODAY</p><h2>Today</h2><div class="hero-date" id="today-date"></div></div><div class="notice">Local-first recording is active.</div></div>
         <div class="grid stats">
           <div class="card stat"><div class="label">All animals</div><div id="stat-total" class="value">0</div></div>
           <div class="card stat"><div class="label">Dairy cows</div><div id="stat-dairy" class="value">0</div></div>
@@ -43,13 +43,13 @@
         </div>
       </div>
 
-      <div class="grid two" style="margin-bottom:16px">
-        <div class="card"><h3>Today's milk</h3><div id="today-milk" style="font-size:2rem;font-weight:800">0 L</div><div class="muted">Indicative value at KSh 49/L: <strong id="today-value">KSh 0</strong></div></div>
-        <div class="card"><h3>This milk week</h3><div id="week-period" style="font-size:1.3rem;font-weight:800">—</div><div class="muted">Payment day: Saturday</div></div>
+      <div class="grid two home-overview">
+        <div class="card overview-card"><div class="overview-icon" aria-hidden="true">🥛</div><h3>Today's milk</h3><div id="today-milk" class="overview-value">0 L</div><div class="muted">Indicative value at KSh 49/L: <strong id="today-value">KSh 0</strong></div></div>
+        <div class="card overview-card"><div class="overview-icon" aria-hidden="true">📅</div><h3>This milk week</h3><div id="week-period" class="overview-value week-value">—</div><div class="muted">Payment day: Saturday</div></div>
       </div>
 
-      <div class="card" style="margin-bottom:16px">
-        <div class="section-head"><h3>Quick actions</h3></div>
+      <div class="card home-actions">
+        <div class="section-head"><div><p class="eyebrow">SHORTCUTS</p><h3>What would you like to record?</h3></div></div>
         <div class="quick-actions">
           <button class="action" type="button" data-nav-action="milk"><strong>🥛 Record milk</strong><span>Morning, afternoon or evening</span></button>
           <button class="action" type="button" data-nav-action="animals"><strong>🐄 Add animal</strong><span>Photo required</span></button>
@@ -60,7 +60,7 @@
         </div>
       </div>
 
-      <div class="card"><div class="section-head"><h3>Sync status</h3><span id="sync-count" class="chip">0</span></div><div class="muted">Pending local records stay on this device until secure cloud synchronization is enabled.</div></div>
+      <div class="card sync-card"><div class="section-head"><h3>Local records waiting for sync</h3><span id="sync-count" class="chip">0</span></div><div class="muted">Pending local records stay on this device until secure cloud synchronization is enabled.</div></div>
     </section>
 
     <section data-view="animals" class="auth-gated" hidden>
@@ -165,11 +165,11 @@
   </main>
 
   <nav class="bottom-nav auth-gated" aria-label="Primary navigation">
-    <button type="button" data-nav="home">Home</button>
-    <button type="button" data-nav="animals">Animals</button>
-    <button type="button" data-nav="milk">Milk</button>
-    <button type="button" data-nav="health">Health</button>
-    <button type="button" data-nav="finance">Finance</button>
+    <button type="button" data-nav="home"><span class="nav-icon" aria-hidden="true">⌂</span><span>Home</span></button>
+    <button type="button" data-nav="animals"><span class="nav-icon" aria-hidden="true">🐄</span><span>Animals</span></button>
+    <button type="button" data-nav="milk"><span class="nav-icon" aria-hidden="true">◉</span><span>Milk</span></button>
+    <button type="button" data-nav="health"><span class="nav-icon" aria-hidden="true">✚</span><span>Health</span></button>
+    <button type="button" data-nav="finance"><span class="nav-icon" aria-hidden="true">▣</span><span>Finance</span></button>
   </nav>
 
   <script>
