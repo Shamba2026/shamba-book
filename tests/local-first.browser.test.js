@@ -187,6 +187,7 @@ try {
   await page.locator('button[data-nav="milk"]').click();
   assert.match(await page.locator("#milk-checklist-summary").textContent(), /1 of 1 active dairy cows have no morning record/);
   await page.locator('[data-milk-session="evening"]').click();
+  await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no evening record"));
   assert.match(await page.locator("#milk-checklist-summary").textContent(), /no evening record/);
   await page.locator("#milk-animal").selectOption(id);
   await page.locator("#milk-liters").fill("2.5");
