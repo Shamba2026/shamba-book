@@ -13,15 +13,22 @@ const animalCode = "TEST-BROWSER-LOCAL-FIRST-001";
 const artifactDir = path.join(root, "test-artifacts");
 const authModule = `
 const key = "ngombe-isolated-browser-test-auth";
-const user = { id: "isolated-test-user", email: "synthetic@example.invalid" };
+const users = [
+  { id: "isolated-test-user", email: "synthetic@example.invalid" },
+  { id: "other-test-user", email: "other@example.invalid" }
+];
 const listeners = new Set();
-const current = () => localStorage.getItem(key) === "signed-in" ? { user } : null;
+const current = () => {
+  const user = users.find((candidate) => candidate.id === localStorage.getItem(key));
+  return user ? { user } : null;
+};
 const auth = {
   onAuthStateChange(callback) { listeners.add(callback); return { data: { subscription: { unsubscribe() { listeners.delete(callback); } } } }; },
   async getSession() { return { data: { session: current() }, error: null }; },
   async signInWithPassword({ email, password }) {
-    if (email !== user.email || password !== "TEST-ONLY") return { error: new Error("Test credentials rejected.") };
-    localStorage.setItem(key, "signed-in");
+    const user = users.find((candidate) => candidate.email === email);
+    if (!user || password !== "TEST-ONLY") return { error: new Error("Test credentials rejected.") };
+    localStorage.setItem(key, user.id);
     listeners.forEach((callback) => callback("SIGNED_IN", current()));
     return { error: null };
   },
@@ -155,6 +162,34 @@ try {
   await page.locator('#app-status:has-text("Animal saved on this device.")').waitFor();
   await visibleAnimal(page);
   const id = await localState(page);
+
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.locator("#auth-email").fill("other@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator('button[data-nav="animals"]').click();
+  // Give the asynchronous signed-in refresh time to complete before checking for leakage.
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0,
+    "another account must not see the first account's animal");
+  assert.equal(await page.locator("#profile-photo").getAttribute("src"), null);
+  assert.equal(await page.locator("#milk-animal option").count(), 0);
+  assert.equal(await page.locator("#sync-count").textContent(), "0",
+    "another account must not see the first account's pending queue count");
+  assert.equal((await storedRows(page, "animals")).length, 1,
+    "account switching must preserve the original local row");
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.locator("#auth-email").fill("synthetic@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await visibleAnimal(page);
+  await localState(page, id);
 
   const rolledBack = await page.evaluate(async () => {
     const { putAtomically } = await import("/src/storage/local-db.js");
