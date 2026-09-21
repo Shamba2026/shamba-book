@@ -13,15 +13,23 @@ const animalCode = "TEST-BROWSER-LOCAL-FIRST-001";
 const artifactDir = path.join(root, "test-artifacts");
 const authModule = `
 const key = "ngombe-isolated-browser-test-auth";
-const user = { id: "isolated-test-user", email: "synthetic@example.invalid" };
+const users = [
+  { id: "isolated-test-user", email: "synthetic@example.invalid" },
+  { id: "other-test-user", email: "other@example.invalid" },
+  { id: "same-farm-user", email: "member@example.invalid" }
+];
 const listeners = new Set();
-const current = () => localStorage.getItem(key) === "signed-in" ? { user } : null;
+const current = () => {
+  const user = users.find((candidate) => candidate.id === localStorage.getItem(key));
+  return user ? { user } : null;
+};
 const auth = {
   onAuthStateChange(callback) { listeners.add(callback); return { data: { subscription: { unsubscribe() { listeners.delete(callback); } } } }; },
   async getSession() { return { data: { session: current() }, error: null }; },
   async signInWithPassword({ email, password }) {
-    if (email !== user.email || password !== "TEST-ONLY") return { error: new Error("Test credentials rejected.") };
-    localStorage.setItem(key, "signed-in");
+    const user = users.find((candidate) => candidate.email === email);
+    if (!user || password !== "TEST-ONLY") return { error: new Error("Test credentials rejected.") };
+    localStorage.setItem(key, user.id);
     listeners.forEach((callback) => callback("SIGNED_IN", current()));
     return { error: null };
   },
@@ -31,7 +39,13 @@ const auth = {
     return { error: null };
   }
 };
-export async function getAuthClient() { return { auth }; }
+export async function getAuthClient() { return { auth, from(table) {
+  if (table !== "farm_members") throw new Error("Unexpected cloud table: " + table);
+  return { select() { return this; }, eq() { return this; }, async maybeSingle() {
+    const user = current()?.user;
+    return { data: user && user.id !== "other-test-user" ? { farm_id: "${APP_CONFIG.cloud.farmId}" } : null, error: null };
+  } };
+} }; }
 `;
 
 const contentTypes = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };
@@ -103,6 +117,8 @@ async function localState(page, expectedId) {
   assert.equal(queue.length, 1);
   assert.equal(queue[0].status, "pending");
   assert.equal(queue[0].recordId, animals[0].id);
+  assert.equal(animals[0].farmId, APP_CONFIG.cloud.farmId);
+  assert.equal(queue[0].farmId, APP_CONFIG.cloud.farmId);
   await page.waitForFunction(() => document.querySelector("#sync-count")?.textContent === "1");
   assert.equal(await page.locator("#sync-count").textContent(), "1");
   return animals[0].id;
@@ -163,6 +179,43 @@ try {
   await visibleAnimal(page);
   const id = await localState(page);
 
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.locator("#auth-email").fill("other@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  assert.equal(await page.locator(".bottom-nav").isVisible(), false, "outsider must remain locked");
+  // Give the asynchronous signed-in refresh time to complete before checking for leakage.
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0,
+    "another account must not see the first account's animal");
+  assert.equal(await page.locator("#profile-photo").getAttribute("src"), null);
+  assert.equal(await page.locator("#milk-animal option").count(), 0);
+  assert.equal(await page.locator("#sync-count").textContent(), "0",
+    "another account must not see the first account's pending queue count");
+  assert.equal((await storedRows(page, "animals")).length, 1,
+    "account switching must preserve the original local row");
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.locator("#auth-email").fill("member@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await visibleAnimal(page);
+  await localState(page, id);
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.locator("#auth-email").fill("synthetic@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await visibleAnimal(page);
+  await localState(page, id);
+
   const rolledBack = await page.evaluate(async () => {
     const { putAtomically } = await import("/src/storage/local-db.js");
     try {
@@ -194,6 +247,16 @@ try {
   await page.locator("#account-actions:not([hidden])").waitFor();
   await visibleAnimal(page);
   await localState(page, id);
+  await page.evaluate(() => localStorage.setItem("ngombe-test-offline", "1"));
+  await context.addInitScript(() => {
+    if (localStorage.getItem("ngombe-test-offline") === "1")
+      Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+  });
+  await page.reload();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await visibleAnimal(page);
+  await localState(page, id);
+  await page.evaluate(() => localStorage.removeItem("ngombe-test-offline"));
 
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
@@ -228,6 +291,31 @@ try {
   assert.equal((await storedRows(page, "sync_queue")).length, 2);
   await page.locator('[data-milk-session="morning"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no morning record"));
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("ngombe-herdbook");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = db.transaction(["animals", "attachments", "sync_queue"], "readwrite");
+    transaction.objectStore("animals").put({ id: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY", type: "dairy_cow", breed: "SYNTHETIC" });
+    transaction.objectStore("attachments").put({ id: "TEST-LEGACY-PHOTO", ownerId: "TEST-LEGACY-ID", blob: new Blob(["SYNTHETIC"]) });
+    transaction.objectStore("sync_queue").put({ id: "TEST-LEGACY-QUEUE", recordId: "TEST-LEGACY-ID", status: "pending" });
+    await new Promise((resolve, reject) => {
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator('button[data-nav="animals"]').click();
+  await page.waitForFunction(() => document.querySelector("#sync-count")?.textContent === "2");
+  assert.equal(await page.locator("#animal-list").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false);
+  assert.equal((await storedRows(page, "animals")).some((row) => row.id === "TEST-LEGACY-ID"), true);
+  assert.equal((await storedRows(page, "attachments")).some((row) => row.id === "TEST-LEGACY-PHOTO"), true);
+  assert.equal((await storedRows(page, "sync_queue")).some((row) => row.id === "TEST-LEGACY-QUEUE"), true);
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
