@@ -7,6 +7,36 @@ import { pullFarmSnapshot } from "./cloud/supabase-adapter.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
+let signedIn = false;
+let accessGeneration = 0;
+
+function clearFarmView() {
+  ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form"].forEach((selector) => {
+    $(selector).reset();
+  });
+  $("#milk-value-preview").textContent = "—";
+  $("#animal-list").replaceChildren();
+  $("#animals-empty").hidden = false;
+  $("#animal-profile").hidden = true;
+  ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
+    $(selector).textContent = "";
+  });
+  const image = $("#profile-photo");
+  if (image.src) URL.revokeObjectURL(image.src);
+  image.removeAttribute("src");
+  image.hidden = true;
+  ["#milk-animal", "#weight-animal", "#health-animal", "#breeding-animal"].forEach((selector) => {
+    $(selector).replaceChildren();
+  });
+  ["#stat-total", "#stat-dairy", "#stat-bulls", "#stat-calves", "#sync-count"].forEach((selector) => {
+    $(selector).textContent = "0";
+  });
+  $("#today-milk").textContent = "0.0 L";
+  $("#today-value").textContent = "KSh 0";
+  $("#week-period").textContent = "—";
+}
+
+const canShowFarmData = (generation) => signedIn && generation === accessGeneration;
 
 function setAppAccess(unlocked) {
   document.querySelectorAll(".auth-gated").forEach((el) => {
@@ -55,13 +85,15 @@ function showView(viewName) {
   });
 }
 
-async function refreshDashboard() {
+async function refreshDashboard(generation = accessGeneration) {
+  if (!canShowFarmData(generation)) return;
   const today = toLocalDateString();
   const results = await Promise.all([
     FarmRepository.getHerdSummary(),
     FarmRepository.getTodayMilkSummary(today),
     FarmRepository.getPendingSyncCount()
   ]);
+  if (!canShowFarmData(generation)) return;
 
   const herd = results[0];
   const milk = results[1];
@@ -87,14 +119,16 @@ function animalCard(animal) {
     '<span class="chip">' + escapeHtml(animal.breed) + '</span></button>';
 }
 
-async function refreshAnimalList() {
-  const animals = await FarmRepository.listAnimals();
+function refreshAnimalList(animals) {
   $("#animals-empty").hidden = animals.length > 0;
   $("#animal-list").innerHTML = animals.map(animalCard).join("");
 }
 
 async function openAnimal(animalId) {
+  const generation = accessGeneration;
+  if (!canShowFarmData(generation)) return;
   const result = await FarmRepository.getAnimal(animalId);
+  if (!canShowFarmData(generation)) return;
   if (!result) {
     setStatus("Animal not found on this device.", "error");
     return;
@@ -130,10 +164,12 @@ function populateAnimalSelectors(animals) {
   });
 }
 
-async function refreshAnimalData() {
+async function refreshAnimalData(generation = accessGeneration) {
+  if (!canShowFarmData(generation)) return;
   const animals = await FarmRepository.listAnimals();
+  if (!canShowFarmData(generation)) return;
   populateAnimalSelectors(animals);
-  await refreshAnimalList();
+  refreshAnimalList(animals);
 }
 
 async function handleAnimalSubmit(event) {
@@ -280,7 +316,10 @@ async function initAuth() {
   };
 
   const setSignedOut = () => {
+    signedIn = false;
+    accessGeneration += 1;
     setAppAccess(false);
+    clearFarmView();
     statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
@@ -288,7 +327,12 @@ async function initAuth() {
   };
 
   const setSignedIn = (user) => {
+    signedIn = true;
+    const generation = ++accessGeneration;
     setAppAccess(true);
+    $("#milk-date").value = toLocalDateString();
+    $("#weight-date").value = toLocalDateString();
+    $("#health-date").value = toLocalDateString();
     statusEl.textContent = "Signed in";
     signInButton.hidden = true;
     signOutButton.hidden = false;
@@ -296,6 +340,9 @@ async function initAuth() {
     emailEl.value = user?.email || "";
     passwordEl.value = "";
     setStatus("Signed in to the farm cloud account.", "success");
+    refreshAll(generation).catch((error) => {
+      if (canShowFarmData(generation)) setStatus("Local records could not be refreshed: " + (error.message || error), "error");
+    });
   };
 
   setSignedOut();
@@ -372,9 +419,9 @@ async function initAuth() {
     setStatus("Authentication setup failed: " + (error.message || error), "error");
   });
 }
-async function refreshAll() {
-  await refreshAnimalData();
-  await refreshDashboard();
+async function refreshAll(generation = accessGeneration) {
+  await refreshAnimalData(generation);
+  await refreshDashboard(generation);
 }
 
 export async function initApp() {
@@ -421,12 +468,10 @@ export async function initApp() {
 
   setStatus("Ready. Records save on this device first.", "success");
 
-  refreshAll().catch((error) => {
-    setStatus("App opened, but local records could not be refreshed: " + (error.message || error), "error");
-  });
-
   startSyncLoop(async () => {
-    await refreshDashboard();
-    if (navigator.onLine && APP_CONFIG.cloud.enabled) setStatus("Cloud sync attempted.", "info");
+    if (!signedIn) return;
+    const generation = accessGeneration;
+    await refreshDashboard(generation);
+    if (canShowFarmData(generation) && navigator.onLine && APP_CONFIG.cloud.enabled) setStatus("Cloud sync attempted.", "info");
   });
 }
