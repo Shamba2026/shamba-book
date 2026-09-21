@@ -14,7 +14,7 @@
   <main class="app-shell">
     <header class="header">
       <div class="brand"><span class="brand-mark" aria-hidden="true">🐄</span><div><h1>Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div></div>
-      <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden>Restore cloud data</button></details></div>
+      <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden disabled>Restore cloud data</button><p class="muted">Cloud restore is paused while local record ownership is reviewed.</p></details></div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
     <div id="auth-lock-message" class="card auth-lock-message" style="margin:16px 0" hidden><h2>Sign in required</h2><p class="muted">Sign in to access your farm records and management tools.</p></div>
@@ -198,7 +198,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20260921-03";
+      script.src = "./src/main.js?build=20260921-04";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {

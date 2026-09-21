@@ -138,6 +138,13 @@ try {
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
+  assert.equal(await page.locator("#auth-restore").isVisible(), false, "cloud restore must stay unavailable");
+  assert.equal(await page.locator("#auth-restore").isEnabled(), false, "cloud restore must be disabled");
+  const statusBeforeRestoreAttempt = await page.locator("#app-status").textContent();
+  await page.locator("#auth-restore").evaluate((button) => button.dispatchEvent(new Event("click")));
+  await page.waitForTimeout(50);
+  assert.equal(await page.locator("#app-status").textContent(), statusBeforeRestoreAttempt,
+    "cloud restore must have no active click handler");
   assert.equal(await page.locator('[data-view="home"]').isVisible(), true);
   await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: path.join(artifactDir, "home-desktop.png"), fullPage: true });
