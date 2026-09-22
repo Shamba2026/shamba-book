@@ -298,9 +298,9 @@ try {
       request.onerror = () => reject(request.error);
     });
     const transaction = db.transaction(["animals", "attachments", "sync_queue"], "readwrite");
-    transaction.objectStore("animals").put({ id: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY", type: "dairy_cow", breed: "SYNTHETIC" });
+    transaction.objectStore("animals").put({ id: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY", type: "dairy_cow", breed: "SYNTHETIC", photoAttachmentId: "TEST-LEGACY-PHOTO" });
     transaction.objectStore("attachments").put({ id: "TEST-LEGACY-PHOTO", ownerId: "TEST-LEGACY-ID", blob: new Blob(["SYNTHETIC"]) });
-    transaction.objectStore("sync_queue").put({ id: "TEST-LEGACY-QUEUE", recordId: "TEST-LEGACY-ID", status: "pending" });
+    transaction.objectStore("sync_queue").put({ id: "TEST-LEGACY-ID", recordId: "TEST-LEGACY-ID", recordType: "animal", status: "pending", payload: { id: "TEST-LEGACY-ID" } });
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
@@ -315,10 +315,70 @@ try {
   assert.equal(await page.locator("#animal-list").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false);
   assert.equal((await storedRows(page, "animals")).some((row) => row.id === "TEST-LEGACY-ID"), true);
   assert.equal((await storedRows(page, "attachments")).some((row) => row.id === "TEST-LEGACY-PHOTO"), true);
-  assert.equal((await storedRows(page, "sync_queue")).some((row) => row.id === "TEST-LEGACY-QUEUE"), true);
+  assert.equal((await storedRows(page, "sync_queue")).some((row) => row.id === "TEST-LEGACY-ID"), true);
+  const recoveryPreflight = await page.evaluate(async () => {
+    const { inspectRecoveryBackup } = await import("/src/storage/recovery-preflight.js");
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("ngombe-herdbook");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const encode = async (value) => {
+      if (value === null || typeof value !== "object") return value;
+      if (value instanceof Blob) {
+        const bytes = new Uint8Array(await value.arrayBuffer());
+        const encoded = { $type: value instanceof File ? "File" : "Blob", mimeType: value.type,
+          base64: btoa(String.fromCharCode(...bytes)) };
+        if (value instanceof File) { encoded.name = value.name; encoded.lastModified = value.lastModified; }
+        return encoded;
+      }
+      if (Array.isArray(value)) return { $type: "Array", items: await Promise.all(value.map(encode)) };
+      return { $type: "Object", entries: await Promise.all(Object.entries(value)
+        .map(async ([key, item]) => [key, await encode(item)])) };
+    };
+    const stores = {};
+    for (const name of ["animals", "attachments", "records", "sync_queue", "settings"]) {
+      const rows = await new Promise((resolve, reject) => {
+        const request = db.transaction(name, "readonly").objectStore(name).getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      stores[name] = await Promise.all(rows.map(encode));
+    }
+    db.close();
+    const payload = { format: "ngombe-local-evidence-v1", origin: location.origin + location.pathname,
+      database: "ngombe-herdbook", databaseVersion: 1, capturedAt: new Date().toISOString(), stores };
+    const hash = async (item) => [...new Uint8Array(await crypto.subtle.digest("SHA-256",
+      new TextEncoder().encode(JSON.stringify(item))))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const file = (data) => new File([JSON.stringify(data)], "synthetic-backup.json", { type: "application/json" });
+    const backup = { payload, sha256: await hash(payload) };
+    const result = await inspectRecoveryBackup(file(backup));
+    const backupJSON = JSON.stringify(backup);
+    backup.payload.stores.animals[0].entries.find(([key]) => key === "animalCode")[1] = "ALTERED-BACKUP";
+    backup.sha256 = await hash(backup.payload);
+    let changedRejected = false;
+    try { await inspectRecoveryBackup(file(backup)); } catch { changedRejected = true; }
+    backup.sha256 = "0".repeat(64);
+    let hashRejected = false;
+    try { await inspectRecoveryBackup(file(backup)); } catch { hashRejected = true; }
+    return { result, changedRejected, hashRejected, backupJSON };
+  });
+  assert.equal(recoveryPreflight.result.matched, true);
+  assert.equal(recoveryPreflight.result.unownedAnimals.some((item) => item.id === "TEST-LEGACY-ID" &&
+    item.photoCount === 1 && item.queueCount === 1 && item.linksValid === true), true,
+    "a complete unowned animal, photo, and pending queue group must be identified");
+  assert.equal(recoveryPreflight.changedRejected, true, "a self-consistent but stale backup must fail");
+  assert.equal(recoveryPreflight.hashRejected, true, "a corrupt checksum must fail");
+  await page.locator("#account-actions summary").click();
+  await page.locator("#recovery-backup").setInputFiles({ name: "synthetic-evidence.json",
+    mimeType: "application/json", buffer: Buffer.from(recoveryPreflight.backupJSON) });
+  await page.locator('#recovery-result:has-text("Backup matches current local records")').waitFor();
+  await page.locator("#account-actions summary").click();
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await page.locator("#recovery-result").textContent(), "",
+    "signed-out DOM must not retain the backup digest or recovery status");
   assert.equal(await page.locator("#milk-checklist").textContent(), "");
   assert.equal(await page.locator("body").textContent().then((text) => text.includes(animalCode)), false);
   assert.deepEqual(externalRequests, [], "test must not contact cloud or other external origins");

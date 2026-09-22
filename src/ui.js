@@ -4,6 +4,7 @@ import { validateAnimal, validateMilk, validateWeight } from "./domain/validatio
 import * as FarmRepository from "./storage/farm-repository.js?build=20260921-05";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js";
+import { inspectRecoveryBackup } from "./storage/recovery-preflight.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -345,6 +346,9 @@ async function initAuth() {
   const restoreButton = $("#auth-restore");
   const authCard = $("#auth-card");
   const accountActions = $("#account-actions");
+  const recoveryEvidence = $("#recovery-evidence");
+  const recoveryInput = $("#recovery-backup");
+  const recoveryResult = $("#recovery-result");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
   let clientPromise = null;
@@ -363,6 +367,9 @@ async function initAuth() {
     authCard.hidden = false;
     accountActions.hidden = true;
     accountActions.open = false;
+    recoveryEvidence.hidden = true;
+    recoveryInput.value = "";
+    recoveryResult.textContent = "";
     statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
@@ -395,6 +402,7 @@ async function initAuth() {
     setAppAccess(true);
     authCard.hidden = true;
     accountActions.hidden = false;
+    recoveryEvidence.hidden = false;
     $("#milk-date").value = toLocalDateString();
     $("#weight-date").value = toLocalDateString();
     $("#health-date").value = toLocalDateString();
@@ -412,6 +420,20 @@ async function initAuth() {
   };
 
   setSignedOut();
+
+  recoveryInput.addEventListener("change", async () => {
+    if (!signedIn || !recoveryInput.files?.[0]) return;
+    const generation = accessGeneration;
+    recoveryResult.textContent = "Checking backup against this device…";
+    try {
+      const result = await inspectRecoveryBackup(recoveryInput.files[0]);
+      if (!canShowFarmData(generation)) return;
+      recoveryResult.textContent = "Backup matches current local records (" + result.sha256 + "). " +
+        result.unownedAnimals.length + " unowned animal(s) await ownership review. No records changed.";
+    } catch (error) {
+      if (canShowFarmData(generation)) recoveryResult.textContent = error.message || String(error);
+    }
+  });
 
   signInButton.addEventListener("click", async () => {
     try {
