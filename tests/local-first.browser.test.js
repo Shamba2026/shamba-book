@@ -394,7 +394,7 @@ try {
   assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === "TEST-LEGACY-ID").farmId, undefined);
   assert.equal((await storedRows(page, "settings")).some((row) => row.key?.startsWith("legacy-claim:")), false);
   await page.evaluate(() => window.__restoreRecoveryPut());
-  const staleClaim = await page.evaluate(async (json, farmId) => {
+  const staleClaim = await page.evaluate(async ({ json, farmId }) => {
     const { inspectRecoveryBackup } = await import("/src/storage/recovery-preflight.js?build=20260922-03");
     const { claimLegacyAnimalAtomically, get, put } = await import("/src/storage/local-db.js?build=20260922-03");
     const file = new File([json], "synthetic-evidence.json", { type: "application/json" });
@@ -410,7 +410,7 @@ try {
     const remainedUnowned = !(await get("animals", before.id)).farmId;
     await put("animals", animal);
     return { rejected, remainedUnowned };
-  }, recoveryPreflight.backupJSON, APP_CONFIG.cloud.farmId);
+  }, { json: recoveryPreflight.backupJSON, farmId: APP_CONFIG.cloud.farmId });
   assert.deepEqual(staleClaim, { rejected: true, remainedUnowned: true },
     "a row changed after comparison must abort without assigning ownership");
   await page.locator("#recovery-claim-button").click();
