@@ -236,8 +236,12 @@ try {
   await page.locator("#finance-details").fill("TEST FINANCE INCOME");
   await page.locator("#finance-method").selectOption("M-Pesa");
   await page.locator("#finance-reference").fill("TEST-CODE");
+  assert.equal(await page.locator("#finance-form").evaluate((form) => form.checkValidity()), true,
+    "finance form must be valid before synthetic save");
   await page.locator("#finance-save").click();
-  await page.locator('#finance-count:has-text("1 entry")').waitFor();
+  await page.waitForTimeout(350);
+  assert.equal(await page.locator("#finance-count").textContent(), "1 entry",
+    "first finance save status: " + await page.locator("#app-status").textContent());
   await page.locator('[data-finance-direction="expense"]').click();
   await page.locator("#finance-category").selectOption("Feed");
   await page.locator("#finance-amount").fill("25.20");
