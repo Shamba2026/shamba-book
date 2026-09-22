@@ -373,14 +373,88 @@ try {
   await page.locator("#recovery-backup").setInputFiles({ name: "synthetic-evidence.json",
     mimeType: "application/json", buffer: Buffer.from(recoveryPreflight.backupJSON) });
   await page.locator('#recovery-result:has-text("Backup matches current local records")').waitFor();
-  await page.locator("#account-actions summary").click();
-  await page.locator("#account-actions summary").click();
+  await page.locator("#recovery-code").fill("TEST-UNOWNED-LEGACY");
+  await page.locator("#recovery-confirm").check();
+  assert.equal(await page.locator("#recovery-claim-button").isEnabled(), true);
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.put;
+    window.__restoreRecoveryPut = () => { IDBObjectStore.prototype.put = original; };
+    IDBObjectStore.prototype.put = function (value, ...args) {
+      if (this.name === "sync_queue" && value?.id === "TEST-LEGACY-ID" && value.farmId) {
+        throw new DOMException("Synthetic queue write failure", "DataCloneError");
+      }
+      return original.call(this, value, ...args);
+    };
+  });
+  await page.locator("#recovery-claim-button").click();
+  await page.locator('#recovery-result:has-text("Synthetic queue write failure")').waitFor();
+  assert.equal((await storedRows(page, "animals")).find((row) => row.id === "TEST-LEGACY-ID").farmId, undefined,
+    "animal ownership must roll back when the queue write fails");
+  assert.equal((await storedRows(page, "attachments")).find((row) => row.id === "TEST-LEGACY-PHOTO").farmId, undefined);
+  assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === "TEST-LEGACY-ID").farmId, undefined);
+  assert.equal((await storedRows(page, "settings")).some((row) => row.key?.startsWith("legacy-claim:")), false);
+  await page.evaluate(() => window.__restoreRecoveryPut());
+  await page.locator("#recovery-claim-button").click();
+  await page.locator('#recovery-result:has-text("claimed locally")').waitFor();
+  assert.equal((await storedRows(page, "animals")).find((row) => row.id === "TEST-LEGACY-ID").farmId, APP_CONFIG.cloud.farmId);
+  assert.equal((await storedRows(page, "attachments")).find((row) => row.id === "TEST-LEGACY-PHOTO").farmId, APP_CONFIG.cloud.farmId);
+  const claimedQueue = (await storedRows(page, "sync_queue")).find((row) => row.id === "TEST-LEGACY-ID");
+  assert.equal(claimedQueue.farmId, APP_CONFIG.cloud.farmId);
+  assert.equal(claimedQueue.payload.farmId, APP_CONFIG.cloud.farmId);
+  assert.equal((await storedRows(page, "settings")).filter((row) => row.key?.startsWith("legacy-claim:")).length, 1);
+  await page.locator("#animal-list [data-animal-id]").filter({ hasText: "TEST-UNOWNED-LEGACY" }).waitFor();
+  const repeat = await page.evaluate(async (json) => {
+    const { claimLegacyAnimal } = await import("/src/storage/legacy-claim.js");
+    const { getAuthClient } = await import("/src/auth.js");
+    const file = new File([json], "synthetic-evidence.json", { type: "application/json" });
+    return claimLegacyAnimal({ client: await getAuthClient(), userId: "isolated-test-user",
+      animalId: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY", file, assertCurrent() {} });
+  }, recoveryPreflight.backupJSON);
+  assert.equal(repeat.status, "already_claimed");
+  assert.equal((await storedRows(page, "animals")).length, 2);
+  assert.equal((await storedRows(page, "sync_queue")).length, 3);
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
   assert.equal(await page.locator("#recovery-result").textContent(), "",
     "signed-out DOM must not retain the backup digest or recovery status");
+  assert.equal(await page.locator("body").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false,
+    "signed-out DOM must not retain the claimed animal code");
   assert.equal(await page.locator("#milk-checklist").textContent(), "");
   assert.equal(await page.locator("body").textContent().then((text) => text.includes(animalCode)), false);
+  await page.locator("#auth-email").fill("other@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  assert.equal(await page.locator("#recovery-evidence").isVisible(), false);
+  const outsiderClaim = await page.evaluate(async (json) => {
+    const { claimLegacyAnimal } = await import("/src/storage/legacy-claim.js");
+    const { getAuthClient } = await import("/src/auth.js");
+    try {
+      await claimLegacyAnimal({ client: await getAuthClient(), userId: "other-test-user",
+        animalId: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY",
+        file: new File([json], "synthetic.json"), assertCurrent() {} });
+      return "permitted";
+    } catch { return "denied"; }
+  }, recoveryPreflight.backupJSON);
+  assert.equal(outsiderClaim, "denied");
+  assert.equal((await storedRows(page, "animals")).find((row) => row.id === "TEST-LEGACY-ID").farmId,
+    APP_CONFIG.cloud.farmId, "outsider attempt must leave ownership unchanged");
+  await page.locator("#account-actions summary").click();
+  await page.locator("#auth-sign-out").click();
+  await page.locator("#auth-email").fill("member@example.invalid");
+  await page.locator("#auth-password").fill("TEST-ONLY");
+  await page.locator("#auth-sign-in").click();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator('button[data-nav="animals"]').click();
+  await page.locator("#animal-list [data-animal-id]").filter({ hasText: "TEST-UNOWNED-LEGACY" }).waitFor();
+  const sameFarmRepeat = await page.evaluate(async (json) => {
+    const { claimLegacyAnimal } = await import("/src/storage/legacy-claim.js");
+    const { getAuthClient } = await import("/src/auth.js");
+    return claimLegacyAnimal({ client: await getAuthClient(), userId: "same-farm-user",
+      animalId: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY",
+      file: new File([json], "synthetic.json"), assertCurrent() {} });
+  }, recoveryPreflight.backupJSON);
+  assert.equal(sameFarmRepeat.status, "already_claimed");
   assert.deepEqual(externalRequests, [], "test must not contact cloud or other external origins");
   assert.deepEqual(pageErrors, [], "application must not throw uncaught errors");
   console.log("local-first.browser.test.js: PASS");

@@ -51,7 +51,7 @@ function field(row, name) {
   return row.entries.find(([key]) => key === name)?.[1];
 }
 
-export async function inspectRecoveryBackup(file) {
+export async function readRecoveryEvidence(file) {
   if (!file || typeof file.text !== "function") throw new Error("Select a local evidence backup file.");
   // A very large or corrupt file should not exhaust the browser while verifying.
   if (file.size > 100 * 1024 * 1024) throw new Error("Backup exceeds the 100 MB inspection limit.");
@@ -61,7 +61,14 @@ export async function inspectRecoveryBackup(file) {
       payload.databaseVersion !== 1 || payload.origin !== location.origin + location.pathname ||
       !/^[a-f0-9]{64}$/.test(sha256)) throw new Error("Backup identity does not match this app and database.");
   if (await digest(payload) !== sha256) throw new Error("Backup checksum mismatch. Local records were not changed.");
-  if (!Array.isArray(payload.stores?.settings)) throw new Error("Backup has no settings store.");
+  if (![...STORE_NAMES, "settings"].every((name) => Array.isArray(payload.stores?.[name]))) {
+    throw new Error("Backup is missing an expected store.");
+  }
+  return { payload, sha256 };
+}
+
+export async function inspectRecoveryBackup(file) {
+  const { payload, sha256 } = await readRecoveryEvidence(file);
 
   const live = {};
   for (const name of STORE_NAMES) {

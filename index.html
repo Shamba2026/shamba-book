@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#123e2d">
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
   <link rel="manifest" href="./manifest.json?v=15">
-  <link rel="stylesheet" href="./styles/app.css?build=20260921-02">
+  <link rel="stylesheet" href="./styles/app.css?build=20260922-02">
   <style id="auth-critical-style">.auth-gated{display:none!important}.auth-lock-message{display:block}</style>
   <title>Ngombe Herdbook</title>
 </head>
@@ -14,7 +14,7 @@
   <main class="app-shell">
     <header class="header">
       <div class="brand"><span class="brand-mark" aria-hidden="true">🐄</span><div><h1>Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div></div>
-      <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden disabled>Restore cloud data</button><p class="muted">Cloud restore is paused while local record ownership is reviewed.</p><div id="recovery-evidence" hidden><label for="recovery-backup">Compare local evidence backup</label><input id="recovery-backup" type="file" accept=".json,application/json"><output id="recovery-result" aria-live="polite"></output><p class="muted">Read-only comparison. No ownership or records are changed.</p></div></details></div>
+      <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden disabled>Restore cloud data</button><p class="muted">Cloud restore is paused while local record ownership is reviewed.</p><div id="recovery-evidence" hidden><label for="recovery-backup">Compare local evidence backup</label><input id="recovery-backup" type="file" accept=".json,application/json"><output id="recovery-result" aria-live="polite"></output><div id="recovery-claim" hidden><label for="recovery-animal">Select an unowned animal</label><select id="recovery-animal"></select><label for="recovery-code">Type its full name / ID to confirm</label><input id="recovery-code" autocomplete="off"><label><input id="recovery-confirm" type="checkbox"> I confirm this animal and its linked photo and pending entry belong to this farm.</label><button id="recovery-claim-button" type="button" disabled>Claim selected local animal</button></div><p class="muted">Recovery changes only the explicitly claimed local group after a fresh online membership check. Cloud sync and Restore stay disabled.</p></div></details></div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
     <div id="auth-lock-message" class="card auth-lock-message" style="margin:16px 0" hidden><h2>Sign in required</h2><p class="muted">Sign in to access your farm records and management tools.</p></div>
@@ -198,7 +198,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20260922-01";
+      script.src = "./src/main.js?build=20260922-02";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {

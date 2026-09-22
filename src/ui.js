@@ -5,6 +5,7 @@ import * as FarmRepository from "./storage/farm-repository.js?build=20260921-05"
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js";
+import { claimLegacyAnimal } from "./storage/legacy-claim.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -349,15 +350,27 @@ async function initAuth() {
   const recoveryEvidence = $("#recovery-evidence");
   const recoveryInput = $("#recovery-backup");
   const recoveryResult = $("#recovery-result");
+  const recoveryClaim = $("#recovery-claim");
+  const recoveryAnimal = $("#recovery-animal");
+  const recoveryCode = $("#recovery-code");
+  const recoveryConfirm = $("#recovery-confirm");
+  const recoveryButton = $("#recovery-claim-button");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
   let clientPromise = null;
+  let activeUserId = null;
+  let claimController = null;
+  let claimBusy = false;
   const getClient = () => {
     if (!clientPromise) clientPromise = getAuthClient();
     return clientPromise;
   };
 
   const setSignedOut = () => {
+    claimController?.abort();
+    claimController = null;
+    claimBusy = false;
+    activeUserId = null;
     signedIn = false;
     accessGeneration += 1;
     FarmRepository.setActiveFarm(null);
@@ -370,6 +383,11 @@ async function initAuth() {
     recoveryEvidence.hidden = true;
     recoveryInput.value = "";
     recoveryResult.textContent = "";
+    recoveryClaim.hidden = true;
+    recoveryAnimal.replaceChildren();
+    recoveryCode.value = "";
+    recoveryConfirm.checked = false;
+    recoveryButton.disabled = true;
     statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
@@ -398,6 +416,7 @@ async function initAuth() {
 
   const setSignedIn = (user) => {
     signedIn = true;
+    activeUserId = user.id;
     const generation = ++accessGeneration;
     setAppAccess(true);
     authCard.hidden = true;
@@ -424,14 +443,73 @@ async function initAuth() {
   recoveryInput.addEventListener("change", async () => {
     if (!signedIn || !recoveryInput.files?.[0]) return;
     const generation = accessGeneration;
+    recoveryClaim.hidden = true;
+    recoveryAnimal.replaceChildren();
+    recoveryCode.value = "";
+    recoveryConfirm.checked = false;
+    recoveryButton.disabled = true;
     recoveryResult.textContent = "Checking backup against this device…";
     try {
       const result = await inspectRecoveryBackup(recoveryInput.files[0]);
       if (!canShowFarmData(generation)) return;
       recoveryResult.textContent = "Backup matches current local records (" + result.sha256 + "). " +
         result.unownedAnimals.length + " unowned animal(s) await ownership review. No records changed.";
+      result.unownedAnimals.filter((animal) => animal.linksValid && animal.recordCount === 0).forEach((animal) => {
+        const option = document.createElement("option");
+        option.value = animal.id;
+        option.textContent = animal.animalCode;
+        recoveryAnimal.appendChild(option);
+      });
+      recoveryClaim.hidden = !recoveryAnimal.options.length;
     } catch (error) {
       if (canShowFarmData(generation)) recoveryResult.textContent = error.message || String(error);
+    }
+  });
+
+  const updateClaimButton = () => {
+    const selected = recoveryAnimal.selectedOptions[0];
+    recoveryButton.disabled = claimBusy || !signedIn || !selected || !recoveryConfirm.checked ||
+      recoveryCode.value.trim() !== selected.textContent || !recoveryInput.files?.[0];
+  };
+  [recoveryAnimal, recoveryCode, recoveryConfirm].forEach((element) => {
+    element.addEventListener("input", updateClaimButton);
+    element.addEventListener("change", updateClaimButton);
+  });
+
+  recoveryButton.addEventListener("click", async () => {
+    updateClaimButton();
+    if (recoveryButton.disabled) return;
+    const generation = accessGeneration;
+    const userId = activeUserId;
+    const selectedId = recoveryAnimal.value;
+    const animalCode = recoveryCode.value.trim();
+    const file = recoveryInput.files[0];
+    const controller = new AbortController();
+    claimController = controller;
+    claimBusy = true;
+    recoveryButton.disabled = true;
+    recoveryResult.textContent = "Verifying membership and claiming the selected local group…";
+    try {
+      const result = await claimLegacyAnimal({ client: await getClient(), userId, animalId: selectedId,
+        animalCode, file, signal: controller.signal,
+        assertCurrent: () => {
+          if (!canShowFarmData(generation) || activeUserId !== userId) throw new Error("Farm session changed during claim.");
+        } });
+      if (!canShowFarmData(generation)) return;
+      recoveryClaim.hidden = true;
+      recoveryResult.textContent = result.status === "already_claimed" ? "This local animal was already claimed." :
+        "Selected animal, photo and pending entry claimed locally. Cloud sync remains disabled.";
+      await refreshAll(generation);
+    } catch (error) {
+      if (canShowFarmData(generation)) {
+        recoveryResult.textContent = error.message || String(error);
+      }
+    } finally {
+      if (claimController === controller) {
+        claimBusy = false;
+        claimController = null;
+        if (canShowFarmData(generation)) updateClaimButton();
+      }
     }
   });
 
