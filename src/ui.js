@@ -1,8 +1,10 @@
 import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
-import * as FarmRepository from "./storage/farm-repository.js?build=20260921-03";
+import * as FarmRepository from "./storage/farm-repository.js?build=20260921-05";
 import { getAuthClient } from "./auth.js";
+import { verifyFarmAccess } from "./farm-access.js";
+import { inspectRecoveryBackup } from "./storage/recovery-preflight.js";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -344,6 +346,9 @@ async function initAuth() {
   const restoreButton = $("#auth-restore");
   const authCard = $("#auth-card");
   const accountActions = $("#account-actions");
+  const recoveryEvidence = $("#recovery-evidence");
+  const recoveryInput = $("#recovery-backup");
+  const recoveryResult = $("#recovery-result");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
   let clientPromise = null;
@@ -355,16 +360,40 @@ async function initAuth() {
   const setSignedOut = () => {
     signedIn = false;
     accessGeneration += 1;
+    FarmRepository.setActiveFarm(null);
     setAppAccess(false);
     clearFarmView();
     selectMilkSession("morning");
     authCard.hidden = false;
     accountActions.hidden = true;
     accountActions.open = false;
+    recoveryEvidence.hidden = true;
+    recoveryInput.value = "";
+    recoveryResult.textContent = "";
     statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
     restoreButton.hidden = true;
+  };
+
+  const activateUser = async (user, client) => {
+    setSignedOut();
+    const generation = accessGeneration;
+    statusEl.textContent = "Verifying farm membership…";
+    try {
+      const farmId = await verifyFarmAccess(client, user);
+      if (generation !== accessGeneration) return;
+      FarmRepository.setActiveFarm(farmId);
+      setSignedIn(user);
+    } catch (error) {
+      if (generation !== accessGeneration) return;
+      statusEl.textContent = error.message || String(error);
+      authCard.hidden = true;
+      accountActions.hidden = false;
+      signInButton.hidden = true;
+      signOutButton.hidden = false;
+      setStatus("Farm access unavailable: " + (error.message || error), "error");
+    }
   };
 
   const setSignedIn = (user) => {
@@ -373,6 +402,7 @@ async function initAuth() {
     setAppAccess(true);
     authCard.hidden = true;
     accountActions.hidden = false;
+    recoveryEvidence.hidden = false;
     $("#milk-date").value = toLocalDateString();
     $("#weight-date").value = toLocalDateString();
     $("#health-date").value = toLocalDateString();
@@ -390,6 +420,20 @@ async function initAuth() {
   };
 
   setSignedOut();
+
+  recoveryInput.addEventListener("change", async () => {
+    if (!signedIn || !recoveryInput.files?.[0]) return;
+    const generation = accessGeneration;
+    recoveryResult.textContent = "Checking backup against this device…";
+    try {
+      const result = await inspectRecoveryBackup(recoveryInput.files[0]);
+      if (!canShowFarmData(generation)) return;
+      recoveryResult.textContent = "Backup matches current local records (" + result.sha256 + "). " +
+        result.unownedAnimals.length + " unowned animal(s) await ownership review. No records changed.";
+    } catch (error) {
+      if (canShowFarmData(generation)) recoveryResult.textContent = error.message || String(error);
+    }
+  });
 
   signInButton.addEventListener("click", async () => {
     try {
@@ -427,13 +471,13 @@ async function initAuth() {
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
     const user = data?.session?.user || null;
-    if (user) setSignedIn(user);
+    if (user) await activateUser(user, client);
     else setSignedOut();
   };
 
   getClient().then(async (client) => {
     client.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) setSignedIn(session.user);
+      if (session?.user) activateUser(session.user, client).catch((error) => setStatus(error.message, "error"));
       else setSignedOut();
     });
     try {

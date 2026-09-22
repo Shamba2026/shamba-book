@@ -1,9 +1,10 @@
-const CACHE_NAME = "ngombe-herdbook-shell-v15";
+const CACHE_NAME = "ngombe-herdbook-shell-v17";
 const ASSETS = [
   "./","./index.html","./manifest.json","./styles/app.css",
-  "./src/main.js?build=20260921-04","./src/ui.js?build=20260921-04","./src/auth.js","./src/config.js",
+  "./src/main.js?build=20260922-01","./src/ui.js?build=20260922-01","./src/auth.js","./src/config.js","./src/farm-access.js",
   "./src/domain/farm-rules.js","./src/domain/validation.js",
-  "./src/storage/local-db.js","./src/storage/farm-repository.js",
+  "./src/storage/local-db.js","./src/storage/local-db.js?build=20260921-03",
+  "./src/storage/farm-repository.js","./src/storage/farm-repository.js?build=20260921-05","./src/storage/recovery-preflight.js",
   "./src/cloud/supabase-adapter.js","./src/sync/sync-engine.js"
 ];
 
