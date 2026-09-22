@@ -4,8 +4,8 @@ import { validateAnimal, validateMilk, validateWeight } from "./domain/validatio
 import * as FarmRepository from "./storage/farm-repository.js?build=20260921-05";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js";
-import { inspectRecoveryBackup } from "./storage/recovery-preflight.js";
-import { claimLegacyAnimal } from "./storage/legacy-claim.js";
+import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260922-03";
+import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20260922-03";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);

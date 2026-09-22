@@ -394,6 +394,25 @@ try {
   assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === "TEST-LEGACY-ID").farmId, undefined);
   assert.equal((await storedRows(page, "settings")).some((row) => row.key?.startsWith("legacy-claim:")), false);
   await page.evaluate(() => window.__restoreRecoveryPut());
+  const staleClaim = await page.evaluate(async (json, farmId) => {
+    const { inspectRecoveryBackup } = await import("/src/storage/recovery-preflight.js?build=20260922-03");
+    const { claimLegacyAnimalAtomically, get, put } = await import("/src/storage/local-db.js?build=20260922-03");
+    const file = new File([json], "synthetic-evidence.json", { type: "application/json" });
+    const before = (await inspectRecoveryBackup(file)).unownedAnimals.find((row) => row.id === "TEST-LEGACY-ID");
+    const animal = await get("animals", before.id);
+    await put("animals", { ...animal, notes: "changed in another tab" });
+    let rejected = false;
+    try {
+      await claimLegacyAnimalAtomically({ animalId: before.id, animalCode: before.animalCode,
+        farmId, userId: "isolated-test-user", backupSha256: "synthetic", expectedRows: before.expectedRows,
+        assertCurrent() {} });
+    } catch (error) { rejected = /changed after backup comparison/.test(error.message); }
+    const remainedUnowned = !(await get("animals", before.id)).farmId;
+    await put("animals", animal);
+    return { rejected, remainedUnowned };
+  }, recoveryPreflight.backupJSON, APP_CONFIG.cloud.farmId);
+  assert.deepEqual(staleClaim, { rejected: true, remainedUnowned: true },
+    "a row changed after comparison must abort without assigning ownership");
   await page.locator("#recovery-claim-button").click();
   await page.locator('#recovery-result:has-text("claimed locally")').waitFor();
   assert.equal((await storedRows(page, "animals")).find((row) => row.id === "TEST-LEGACY-ID").farmId, APP_CONFIG.cloud.farmId);

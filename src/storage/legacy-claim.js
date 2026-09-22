@@ -1,6 +1,5 @@
-import { get } from "./local-db.js?build=20260922-02";
-import { claimLegacyAnimalAtomically } from "./local-db.js?build=20260922-02";
-import { inspectRecoveryBackup, readRecoveryEvidence } from "./recovery-preflight.js";
+import { get, claimLegacyAnimalAtomically } from "./local-db.js?build=20260922-03";
+import { inspectRecoveryBackup, readRecoveryEvidence } from "./recovery-preflight.js?build=20260922-03";
 import { verifyFarmAccess } from "../farm-access.js";
 
 export async function claimLegacyAnimal({ client, userId, animalId, animalCode, file, signal, assertCurrent }) {
@@ -45,6 +44,7 @@ export async function claimLegacyAnimal({ client, userId, animalId, animalCode, 
   if (signal?.aborted) throw new Error("Session changed before ownership claim.");
   assertCurrent();
   await claimLegacyAnimalAtomically({ animalId, animalCode, farmId, userId, backupSha256: sha256,
+    expectedRows: selected.expectedRows,
     signal, assertCurrent });
   return { status: "claimed", animalId, farmId };
 }

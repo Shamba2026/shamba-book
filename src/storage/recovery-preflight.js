@@ -1,4 +1,4 @@
-import { getAll } from "./local-db.js?build=20260921-03";
+import { getAll, recoveryRowSnapshot } from "./local-db.js?build=20260922-03";
 
 // The existing evidence exporter serializes binary attachments as base64. This
 // comparison runs entirely in the browser and never uploads or imports a file.
@@ -92,6 +92,9 @@ export async function inspectRecoveryBackup(file) {
     const records = live.records.filter((item) => item.animalId === animal.id && !item.farmId);
     return { id: animal.id, animalCode: animal.animalCode, photoCount: photos.length,
       queueCount: queue.length, recordCount: records.length,
+      expectedRows: photos.length === 1 && queue.length === 1 ? {
+        animal: recoveryRowSnapshot(animal), photo: recoveryRowSnapshot(photos[0]),
+        queue: recoveryRowSnapshot(queue[0]) } : null,
       linksValid: photos.length === 1 && photos[0].id === animal.photoAttachmentId &&
         queue.length === 1 && queue[0].recordType === "animal" && queue[0].id === animal.id &&
         queue[0].payload?.id === animal.id };

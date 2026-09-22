@@ -100,7 +100,21 @@ export async function putAtomically(entries) {
 
 // Claim one explicitly selected legacy animal and its existing photo/queue as
 // one transaction. Checks run against the rows inside the write transaction.
-export async function claimLegacyAnimalAtomically({ animalId, animalCode, farmId, userId, backupSha256, signal, assertCurrent }) {
+// Synchronous snapshot for the transaction's final comparison. Blob bytes are
+// checked by the backup preflight; only Blob metadata can be checked while an
+// IndexedDB transaction remains active.
+export function recoveryRowSnapshot(row) {
+  return JSON.stringify(row, (_key, value) => {
+    if (value instanceof Blob) return { blobType: value.type, blobSize: value.size,
+      fileName: value instanceof File ? value.name : null,
+      lastModified: value instanceof File ? value.lastModified : null };
+    if (value instanceof ArrayBuffer) return [...new Uint8Array(value)];
+    if (ArrayBuffer.isView(value)) return [...new Uint8Array(value.buffer, value.byteOffset, value.byteLength)];
+    return value;
+  });
+}
+
+export async function claimLegacyAnimalAtomically({ animalId, animalCode, farmId, userId, backupSha256, expectedRows, signal, assertCurrent }) {
   const db = await openLocalDatabase();
   const names = ["animals", "attachments", "records", "sync_queue", "settings"];
   const transaction = db.transaction(names, "readwrite");
@@ -136,6 +150,11 @@ export async function claimLegacyAnimalAtomically({ animalId, animalCode, farmId
               queue[0].recordType !== "animal" || queue[0].status !== "pending" ||
               queue[0].payload?.id !== animalId || rows.records.some((row) => row.animalId === animalId)) {
             throw new Error("Animal, photo, records or queue links require individual review.");
+          }
+          if (!expectedRows || recoveryRowSnapshot(animal) !== expectedRows.animal ||
+              recoveryRowSnapshot(photos[0]) !== expectedRows.photo ||
+              recoveryRowSnapshot(queue[0]) !== expectedRows.queue) {
+            throw new Error("Local rows changed after backup comparison; make a new verified backup.");
           }
           const key = "legacy-claim:" + farmId + ":" + animalId;
           if (rows.settings.some((row) => row.key === key)) throw new Error("Animal already has a recovery claim.");
