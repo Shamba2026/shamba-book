@@ -399,7 +399,6 @@ async function handleHealthSubmit(event) {
 
     form.reset();
     $("#health-date").value = toLocalDateString();
-    $("#finance-date").value = toLocalDateString();
     setStatus("Health record saved locally.", "success");
   } catch (error) {
     setStatus(error.message, "error");
@@ -447,6 +446,7 @@ async function initAuth() {
     $("#milk-date").value = toLocalDateString();
     $("#weight-date").value = toLocalDateString();
     $("#health-date").value = toLocalDateString();
+    $("#finance-date").value = toLocalDateString();
     statusEl.textContent = "Signed in";
     signInButton.hidden = true;
     signOutButton.hidden = false;

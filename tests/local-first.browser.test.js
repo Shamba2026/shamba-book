@@ -236,8 +236,10 @@ try {
   await page.locator("#finance-details").fill("TEST FINANCE INCOME");
   await page.locator("#finance-method").selectOption("M-Pesa");
   await page.locator("#finance-reference").fill("TEST-CODE");
-  assert.equal(await page.locator("#finance-form").evaluate((form) => form.checkValidity()), true,
-    "finance form must be valid before synthetic save");
+  const invalidFinanceFields = await page.locator("#finance-form").evaluate((form) =>
+    [...form.elements].filter((field) => field.validity && !field.validity.valid)
+      .map((field) => ({ id: field.id, value: field.value, reason: field.validationMessage })));
+  assert.deepEqual(invalidFinanceFields, [], "finance form must be valid before synthetic save");
   await page.locator("#finance-save").click();
   await page.waitForTimeout(350);
   assert.equal(await page.locator("#finance-count").textContent(), "1 entry",
