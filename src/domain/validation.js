@@ -59,3 +59,30 @@ export function validateWeight(input) {
     localDate: input.localDate
   };
 }
+
+export function validateFinance(input) {
+  const direction = requireText(input.direction, "Entry type");
+  if (!["income", "expense"].includes(direction)) throw new Error("Choose income or expense.");
+  const category = requireText(input.category, "Category");
+  const allowed = direction === "income"
+    ? ["Milk sale", "Animal sale", "Other income"]
+    : ["Feed", "Veterinary", "Labour", "Maintenance", "Transport", "Other expense"];
+  if (!allowed.includes(category)) throw new Error("Choose a valid category.");
+  const amount = String(input.amount ?? "").trim();
+  if (!/^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
+    throw new Error("Enter a positive amount in KSh, with at most two decimal places.");
+  }
+  const [whole, fraction = ""] = amount.split(".");
+  const amountCents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  const localDate = requireText(input.localDate, "Date");
+  const date = new Date(localDate + "T00:00:00Z");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate) || Number.isNaN(date.getTime()) ||
+      date.toISOString().slice(0, 10) !== localDate) throw new Error("Enter a valid date.");
+  const details = requireText(input.details, "Description");
+  if (details.length > 240) throw new Error("Description must be 240 characters or fewer.");
+  const paymentMethod = requireText(input.paymentMethod, "Payment method");
+  if (!["Cash", "M-Pesa", "Bank", "Other"].includes(paymentMethod)) throw new Error("Choose a valid payment method.");
+  const paymentReference = String(input.paymentReference || "").trim();
+  if (paymentReference.length > 100) throw new Error("Payment reference must be 100 characters or fewer.");
+  return { direction, category, amountCents, localDate, details, paymentMethod, paymentReference };
+}

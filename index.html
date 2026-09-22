@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#123e2d">
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
   <link rel="manifest" href="./manifest.json?v=15">
-  <link rel="stylesheet" href="./styles/app.css?build=20260921-02">
+  <link rel="stylesheet" href="./styles/app.css?build=20260922-04">
   <style id="auth-critical-style">.auth-gated{display:none!important}.auth-lock-message{display:block}</style>
   <title>Ngombe Herdbook</title>
 </head>
@@ -159,8 +159,11 @@
     </section>
 
     <section data-view="finance" class="auth-gated" hidden>
-      <div class="grid two"><div class="card"><h2>Income</h2><p class="muted">Milk sales and bull/animal sales are tracked separately from physical production records.</p></div><div class="card"><h2>Expenses</h2><p class="muted">Feed, veterinary, labour, maintenance and other farm expenses can carry evidence and payment references.</p></div></div>
-      <div class="card" style="margin-top:16px"><h3>M-Pesa record keeping</h3><p class="muted">The target record stores amount, counterparty, date, M-Pesa code, reason and optional proof. This foundation sends no payments or messages.</p></div>
+      <div class="card finance-hero"><p class="eyebrow">FARM MONEY</p><h2>Finance</h2><p>Record actual money received and paid. Milk quantities do not create a sale automatically.</p><div class="finance-summary"><div><small>Income recorded</small><strong id="finance-income">KSh 0.00</strong></div><div><small>Expenses recorded</small><strong id="finance-expense">KSh 0.00</strong></div><div><small>Net recorded</small><strong id="finance-net">KSh 0.00</strong></div></div></div>
+      <div class="grid two finance-layout">
+        <form id="finance-form" class="card"><div class="section-head"><h3>New money entry</h3></div><div class="session-tabs" role="group" aria-label="Money entry type"><button type="button" data-finance-direction="income" class="active" aria-pressed="true">Money in</button><button type="button" data-finance-direction="expense" aria-pressed="false">Money out</button></div><input type="hidden" id="finance-direction" value="income"><div class="form-grid finance-fields"><div class="field"><label for="finance-category">Category</label><select id="finance-category" required></select></div><div class="field"><label for="finance-date">Date</label><input id="finance-date" type="date" required></div><div class="field"><label for="finance-amount">Amount (KSh)</label><input id="finance-amount" type="number" min="0.01" max="999999999.99" step="0.01" required></div><div class="field"><label for="finance-method">Payment method</label><select id="finance-method"><option>Cash</option><option>M-Pesa</option><option>Bank</option><option>Other</option></select></div><div class="field full"><label for="finance-details">What was this for?</label><input id="finance-details" maxlength="240" required placeholder="e.g. September milk payment"></div><div class="field full"><label for="finance-reference">Payment reference (optional)</label><input id="finance-reference" maxlength="100" autocomplete="off" placeholder="e.g. M-Pesa confirmation code"></div><div class="field full"><button type="submit" class="primary" id="finance-save">Save income locally</button></div></div><p class="muted finance-note">Record payments manually. This form sends no money and does not import M-Pesa messages.</p></form>
+        <div class="card"><div class="section-head"><h3>Recent entries</h3><span id="finance-count" class="chip">0 entries</span></div><p id="finance-empty" class="muted">No money entries recorded on this device.</p><div id="finance-list" class="animal-list"></div></div>
+      </div>
     </section>
   </main>
 
@@ -198,7 +201,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20260921-04";
+      script.src = "./src/main.js?build=20260922-04";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {
