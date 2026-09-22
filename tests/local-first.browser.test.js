@@ -83,7 +83,7 @@ async function storedRows(page, store) {
         request.onerror = () => reject(request.error);
       });
       return storeName === "attachments" ? Promise.all(rows.map(async (row) => ({
-        id: row.id, ownerId: row.ownerId, blobType: row.blob.type,
+        id: row.id, ownerId: row.ownerId, farmId: row.farmId, blobType: row.blob.type,
         blobText: await row.blob.text()
       }))) : rows;
     } finally {
@@ -397,7 +397,9 @@ try {
   await page.locator("#recovery-claim-button").click();
   await page.locator('#recovery-result:has-text("claimed locally")').waitFor();
   assert.equal((await storedRows(page, "animals")).find((row) => row.id === "TEST-LEGACY-ID").farmId, APP_CONFIG.cloud.farmId);
-  assert.equal((await storedRows(page, "attachments")).find((row) => row.id === "TEST-LEGACY-PHOTO").farmId, APP_CONFIG.cloud.farmId);
+  const claimedPhoto = (await storedRows(page, "attachments")).find((row) => row.id === "TEST-LEGACY-PHOTO");
+  assert.equal(claimedPhoto.farmId, APP_CONFIG.cloud.farmId);
+  assert.equal(claimedPhoto.blobText, "SYNTHETIC", "ownership claim must preserve photo bytes");
   const claimedQueue = (await storedRows(page, "sync_queue")).find((row) => row.id === "TEST-LEGACY-ID");
   assert.equal(claimedQueue.farmId, APP_CONFIG.cloud.farmId);
   assert.equal(claimedQueue.payload.farmId, APP_CONFIG.cloud.farmId);
