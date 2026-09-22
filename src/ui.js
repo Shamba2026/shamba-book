@@ -239,6 +239,7 @@ async function refreshFinance(generation = accessGeneration) {
 
 async function handleFinanceSubmit(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   const generation = accessGeneration;
   if (!canShowFarmData(generation)) return;
   const button = $("#finance-save");
@@ -252,7 +253,7 @@ async function handleFinanceSubmit(event) {
     if (!canShowFarmData(generation)) return;
     await FarmRepository.saveGenericRecord("finance", entry);
     if (!canShowFarmData(generation)) return;
-    event.currentTarget.reset();
+    form.reset();
     selectFinanceDirection(entry.direction);
     $("#finance-date").value = toLocalDateString();
     await refreshFinance(generation);

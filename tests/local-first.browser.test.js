@@ -241,9 +241,11 @@ try {
       .map((field) => ({ id: field.id, value: field.value, reason: field.validationMessage })));
   assert.deepEqual(invalidFinanceFields, [], "finance form must be valid before synthetic save");
   await page.locator("#finance-save").click();
-  await page.waitForTimeout(350);
+  await page.waitForFunction(() => document.querySelector("#finance-count")?.textContent === "1 entry" ||
+    document.querySelector("#app-status")?.dataset.tone === "error");
   assert.equal(await page.locator("#finance-count").textContent(), "1 entry",
     "first finance save status: " + await page.locator("#app-status").textContent());
+  assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "finance").length, 1);
   await page.locator('[data-finance-direction="expense"]').click();
   await page.locator("#finance-category").selectOption("Feed");
   await page.locator("#finance-amount").fill("25.20");
