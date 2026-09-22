@@ -65,11 +65,13 @@ const context = vm.createContext({
     }
   },
   APP_CONFIG: { cloud: { enabled: false } },
+  Option: function Option(text, value) { return { text, value }; },
   FarmRepository: {
     listAnimals: () => animalRead,
     getHerdSummary: () => dashboardRead,
     getTodayMilkSummary: async () => ({ totalLiters: 0 }),
     listMilkRecordsForDate: async () => [],
+    listFinanceEntries: async () => [],
     getPendingSyncCount: async () => 1,
     getAnimal: async () => ({ animal, photo: {} })
   },

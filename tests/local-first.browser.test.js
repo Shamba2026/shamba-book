@@ -228,10 +228,45 @@ try {
   assert.equal((await storedRows(page, "sync_queue")).length, 2);
   await page.locator('[data-milk-session="morning"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no morning record"));
+  await page.locator('button[data-nav="finance"]').click();
+  assert.equal(await page.locator("#finance-count").textContent(), "0 entries");
+  await page.screenshot({ path: path.join(artifactDir, "finance-desktop.png"), fullPage: true });
+  await page.locator("#finance-category").selectOption("Milk sale");
+  await page.locator("#finance-amount").fill("125.50");
+  await page.locator("#finance-details").fill("TEST FINANCE INCOME");
+  await page.locator("#finance-method").selectOption("M-Pesa");
+  await page.locator("#finance-reference").fill("TEST-CODE");
+  const invalidFinanceFields = await page.locator("#finance-form").evaluate((form) =>
+    [...form.elements].filter((field) => field.validity && !field.validity.valid)
+      .map((field) => ({ id: field.id, value: field.value, reason: field.validationMessage })));
+  assert.deepEqual(invalidFinanceFields, [], "finance form must be valid before synthetic save");
+  await page.locator("#finance-save").click();
+  await page.waitForFunction(() => document.querySelector("#finance-count")?.textContent === "1 entry" ||
+    document.querySelector("#app-status")?.dataset.tone === "error");
+  assert.equal(await page.locator("#finance-count").textContent(), "1 entry",
+    "first finance save status: " + await page.locator("#app-status").textContent());
+  assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "finance").length, 1);
+  await page.locator('[data-finance-direction="expense"]').click();
+  await page.locator("#finance-category").selectOption("Feed");
+  await page.locator("#finance-amount").fill("25.20");
+  await page.locator("#finance-details").fill("TEST FINANCE EXPENSE");
+  await page.locator("#finance-save").click();
+  await page.locator('#finance-count:has-text("2 entries")').waitFor();
+  assert.equal(await page.locator("#finance-net").textContent(), "KSh 100.30");
+  const financeRows = (await storedRows(page, "records")).filter((row) => row.kind === "finance");
+  assert.deepEqual(financeRows.map((row) => row.amountCents).sort((a, b) => a - b), [2520, 12550]);
+  assert.equal((await storedRows(page, "sync_queue")).filter((row) => row.recordType === "finance").length, 2);
+  await page.reload();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator('button[data-nav="finance"]').click();
+  await page.locator('#finance-count:has-text("2 entries")').waitFor();
+  assert.equal(await page.locator("#finance-net").textContent(), "KSh 100.30");
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
   assert.equal(await page.locator("#milk-checklist").textContent(), "");
+  assert.equal(await page.locator("#finance-list").textContent(), "");
+  assert.equal(await page.locator("body").textContent().then((text) => text.includes("TEST FINANCE INCOME")), false);
   assert.equal(await page.locator("body").textContent().then((text) => text.includes(animalCode)), false);
   assert.deepEqual(externalRequests, [], "test must not contact cloud or other external origins");
   assert.deepEqual(pageErrors, [], "application must not throw uncaught errors");
