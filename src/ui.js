@@ -1,8 +1,11 @@
 import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
-import * as FarmRepository from "./storage/farm-repository.js?build=20260921-03";
+import * as FarmRepository from "./storage/farm-repository.js?build=20260921-05";
 import { getAuthClient } from "./auth.js";
+import { verifyFarmAccess } from "./farm-access.js";
+import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260922-03";
+import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20260922-03";
 import { startSyncLoop } from "./sync/sync-engine.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -344,35 +347,81 @@ async function initAuth() {
   const restoreButton = $("#auth-restore");
   const authCard = $("#auth-card");
   const accountActions = $("#account-actions");
+  const recoveryEvidence = $("#recovery-evidence");
+  const recoveryInput = $("#recovery-backup");
+  const recoveryResult = $("#recovery-result");
+  const recoveryClaim = $("#recovery-claim");
+  const recoveryAnimal = $("#recovery-animal");
+  const recoveryCode = $("#recovery-code");
+  const recoveryConfirm = $("#recovery-confirm");
+  const recoveryButton = $("#recovery-claim-button");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
 
   let clientPromise = null;
+  let activeUserId = null;
+  let claimController = null;
+  let claimBusy = false;
   const getClient = () => {
     if (!clientPromise) clientPromise = getAuthClient();
     return clientPromise;
   };
 
   const setSignedOut = () => {
+    claimController?.abort();
+    claimController = null;
+    claimBusy = false;
+    activeUserId = null;
     signedIn = false;
     accessGeneration += 1;
+    FarmRepository.setActiveFarm(null);
     setAppAccess(false);
     clearFarmView();
     selectMilkSession("morning");
     authCard.hidden = false;
     accountActions.hidden = true;
     accountActions.open = false;
+    recoveryEvidence.hidden = true;
+    recoveryInput.value = "";
+    recoveryResult.textContent = "";
+    recoveryClaim.hidden = true;
+    recoveryAnimal.replaceChildren();
+    recoveryCode.value = "";
+    recoveryConfirm.checked = false;
+    recoveryButton.disabled = true;
     statusEl.textContent = "Not signed in — sign in to access farm features.";
     signInButton.hidden = false;
     signOutButton.hidden = true;
     restoreButton.hidden = true;
   };
 
+  const activateUser = async (user, client) => {
+    setSignedOut();
+    const generation = accessGeneration;
+    statusEl.textContent = "Verifying farm membership…";
+    try {
+      const farmId = await verifyFarmAccess(client, user);
+      if (generation !== accessGeneration) return;
+      FarmRepository.setActiveFarm(farmId);
+      setSignedIn(user);
+    } catch (error) {
+      if (generation !== accessGeneration) return;
+      statusEl.textContent = error.message || String(error);
+      authCard.hidden = true;
+      accountActions.hidden = false;
+      signInButton.hidden = true;
+      signOutButton.hidden = false;
+      setStatus("Farm access unavailable: " + (error.message || error), "error");
+    }
+  };
+
   const setSignedIn = (user) => {
     signedIn = true;
+    activeUserId = user.id;
     const generation = ++accessGeneration;
     setAppAccess(true);
     authCard.hidden = true;
     accountActions.hidden = false;
+    recoveryEvidence.hidden = false;
     $("#milk-date").value = toLocalDateString();
     $("#weight-date").value = toLocalDateString();
     $("#health-date").value = toLocalDateString();
@@ -390,6 +439,79 @@ async function initAuth() {
   };
 
   setSignedOut();
+
+  recoveryInput.addEventListener("change", async () => {
+    if (!signedIn || !recoveryInput.files?.[0]) return;
+    const generation = accessGeneration;
+    recoveryClaim.hidden = true;
+    recoveryAnimal.replaceChildren();
+    recoveryCode.value = "";
+    recoveryConfirm.checked = false;
+    recoveryButton.disabled = true;
+    recoveryResult.textContent = "Checking backup against this device…";
+    try {
+      const result = await inspectRecoveryBackup(recoveryInput.files[0]);
+      if (!canShowFarmData(generation)) return;
+      recoveryResult.textContent = "Backup matches current local records (" + result.sha256 + "). " +
+        result.unownedAnimals.length + " unowned animal(s) await ownership review. No records changed.";
+      result.unownedAnimals.filter((animal) => animal.linksValid && animal.recordCount === 0).forEach((animal) => {
+        const option = document.createElement("option");
+        option.value = animal.id;
+        option.textContent = animal.animalCode;
+        recoveryAnimal.appendChild(option);
+      });
+      recoveryClaim.hidden = !recoveryAnimal.options.length;
+    } catch (error) {
+      if (canShowFarmData(generation)) recoveryResult.textContent = error.message || String(error);
+    }
+  });
+
+  const updateClaimButton = () => {
+    const selected = recoveryAnimal.selectedOptions[0];
+    recoveryButton.disabled = claimBusy || !signedIn || !selected || !recoveryConfirm.checked ||
+      recoveryCode.value.trim() !== selected.textContent || !recoveryInput.files?.[0];
+  };
+  [recoveryAnimal, recoveryCode, recoveryConfirm].forEach((element) => {
+    element.addEventListener("input", updateClaimButton);
+    element.addEventListener("change", updateClaimButton);
+  });
+
+  recoveryButton.addEventListener("click", async () => {
+    updateClaimButton();
+    if (recoveryButton.disabled) return;
+    const generation = accessGeneration;
+    const userId = activeUserId;
+    const selectedId = recoveryAnimal.value;
+    const animalCode = recoveryCode.value.trim();
+    const file = recoveryInput.files[0];
+    const controller = new AbortController();
+    claimController = controller;
+    claimBusy = true;
+    recoveryButton.disabled = true;
+    recoveryResult.textContent = "Verifying membership and claiming the selected local group…";
+    try {
+      const result = await claimLegacyAnimal({ client: await getClient(), userId, animalId: selectedId,
+        animalCode, file, signal: controller.signal,
+        assertCurrent: () => {
+          if (!canShowFarmData(generation) || activeUserId !== userId) throw new Error("Farm session changed during claim.");
+        } });
+      if (!canShowFarmData(generation)) return;
+      recoveryClaim.hidden = true;
+      recoveryResult.textContent = result.status === "already_claimed" ? "This local animal was already claimed." :
+        "Selected animal, photo and pending entry claimed locally. Cloud sync remains disabled.";
+      await refreshAll(generation);
+    } catch (error) {
+      if (canShowFarmData(generation)) {
+        recoveryResult.textContent = error.message || String(error);
+      }
+    } finally {
+      if (claimController === controller) {
+        claimBusy = false;
+        claimController = null;
+        if (canShowFarmData(generation)) updateClaimButton();
+      }
+    }
+  });
 
   signInButton.addEventListener("click", async () => {
     try {
@@ -427,13 +549,13 @@ async function initAuth() {
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
     const user = data?.session?.user || null;
-    if (user) setSignedIn(user);
+    if (user) await activateUser(user, client);
     else setSignedOut();
   };
 
   getClient().then(async (client) => {
     client.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) setSignedIn(session.user);
+      if (session?.user) activateUser(session.user, client).catch((error) => setStatus(error.message, "error"));
       else setSignedOut();
     });
     try {
