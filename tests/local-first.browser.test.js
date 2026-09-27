@@ -510,6 +510,7 @@ try {
     "reopening must not duplicate finance rows");
   assert.equal((await storedRows(page, "animals")).length, 2);
   assert.equal((await storedRows(page, "sync_queue")).length, 5);
+  await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
   assert.equal(await page.locator("#recovery-result").textContent(), "",
