@@ -14,7 +14,8 @@ let signedIn = false;
 let accessGeneration = 0;
 
 function clearFarmView() {
-  ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form"].forEach((selector) => {
+  ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
+    "#feed-form", "#feed-source-form", "#feed-observation-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -45,6 +46,16 @@ function clearFarmView() {
   $("#finance-empty").hidden = false;
   for (const id of ["#finance-income", "#finance-expense", "#finance-net"]) $(id).textContent = "KSh 0.00";
   $("#finance-count").textContent = "0 entries";
+  selectedFeedId = null;
+  ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts"].forEach((selector) => $(selector).replaceChildren());
+  ["#feed-observation-feed", "#feed-observation-source"].forEach((selector) => $(selector).replaceChildren());
+  $("#feed-count").textContent = "0 feeds";
+  $("#feed-source-count").textContent = "0 sources";
+  $("#feed-empty").hidden = false;
+  $("#feed-source-empty").hidden = false;
+  $("#feed-profile-empty").hidden = false;
+  $("#feed-profile-empty").textContent = "Choose a feed from the farm library to review its observations.";
+  $("#feed-profile-title").textContent = "Select a feed";
 }
 
 const canShowFarmData = (generation) => signedIn && generation === accessGeneration;
@@ -83,6 +94,118 @@ function setStatus(message, tone = "info") {
   const el = $("#app-status");
   el.textContent = message;
   el.dataset.tone = tone;
+}
+
+const feedRoleLabels = { forage: "Forage", concentrate: "Concentrate", mineral: "Mineral", other: "Other" };
+const nutrientLabels = { DM: "Dry matter", ME: "Metabolizable energy", CP: "Crude protein", NDF: "NDF",
+  ADF: "ADF", STARCH: "Starch", FAT: "Fat", ASH: "Ash", CA: "Calcium", P: "Phosphorus" };
+const evidenceClasses = [["VERIFIED_LAB", "Verified laboratory"], ["RESEARCH_SUPPORTED", "Research supported"],
+  ["MANUFACTURER_DECLARED", "Manufacturer declared"], ["FARM_MEASURED", "Farm measured"],
+  ["CALCULATED", "Calculated"], ["MODEL_ESTIMATED", "Model estimated"],
+  ["RANGE_ESTIMATE", "Range estimate"], ["PROVISIONAL", "Provisional"], ["UNKNOWN", "Unknown"]];
+let selectedFeedId = null;
+
+function selectNutritionMetric() {
+  const nutrient = $("#feed-observation-nutrient").value;
+  const basis = nutrient === "DM" ? "AS_FED" : "DRY_MATTER";
+  const units = nutrient === "DM" ? [["PERCENT", "% as fed"], ["G_PER_KG_AS_FED", "g/kg as fed"]] :
+    nutrient === "ME" ? [["MJ_PER_KG_DM", "MJ/kg DM"]] : [["PERCENT", "% DM"], ["G_PER_KG_DM", "g/kg DM"]];
+  $("#feed-observation-basis").replaceChildren(new Option(basis === "AS_FED" ? "As fed" : "Dry matter", basis));
+  $("#feed-observation-unit").replaceChildren(...units.map(([value, label]) => new Option(label, value)));
+}
+
+function renderFeedOptions(feeds, sources) {
+  const feedOptions = [new Option("Choose feed", "")].concat(feeds.map((feed) => new Option(feed.name, feed.id)));
+  $("#feed-observation-feed").replaceChildren(...feedOptions);
+  const sourceOptions = [new Option("Choose source", "")].concat(sources.map((source) => new Option(source.title, source.id)));
+  $("#feed-observation-source").replaceChildren(...sourceOptions);
+}
+
+async function renderNutritionProfile(feedId, generation = accessGeneration) {
+  selectedFeedId = feedId || null;
+  document.querySelectorAll("[data-feed-id]").forEach((row) => row.classList.toggle("active", row.dataset.feedId === selectedFeedId));
+  $("#feed-conflicts").replaceChildren();
+  $("#feed-profile").replaceChildren();
+  if (!feedId) {
+    $("#feed-profile-title").textContent = "Select a feed";
+    $("#feed-profile-empty").hidden = false;
+    return;
+  }
+  const profile = await FarmRepository.getNutritionProfile(feedId);
+  if (!canShowFarmData(generation) || selectedFeedId !== feedId || !profile) return;
+  $("#feed-profile-title").textContent = profile.feed.name;
+  const groups = Object.entries(profile.nutrients);
+  $("#feed-profile-empty").hidden = groups.length > 0;
+  $("#feed-profile-empty").textContent = groups.length ? "" : "No nutrition observations have been recorded for this feed.";
+  $("#feed-conflicts").innerHTML = profile.conflicts.map((code) =>
+    '<div class="feed-conflict">Conflicting ' + escapeHtml(nutrientLabels[code] || code) + ' observations retained for review; no average was calculated.</div>').join("");
+  $("#feed-profile").innerHTML = groups.map(([code, rows]) => '<section class="nutrient-group"><h4>' +
+    escapeHtml(nutrientLabels[code] || code) + '</h4>' + rows.map((row) => '<div class="observation"><strong>' +
+    escapeHtml(row.value + " " + row.unit.replaceAll("_", " ")) + '</strong><small>' +
+    escapeHtml(row.evidenceClass.replaceAll("_", " ") + " · " + (row.observedAt || "Date not recorded")) +
+    '</small><small>' + escapeHtml(row.source.title + " — " + row.source.citation) + '</small>' +
+    (row.context ? '<small>' + escapeHtml(row.context) + '</small>' : '') + '</div>').join("") + '</section>').join("");
+}
+
+async function refreshFeedWorkspace(generation = accessGeneration) {
+  if (!canShowFarmData(generation)) return;
+  const [feeds, sources] = await Promise.all([FarmRepository.listFeeds(), FarmRepository.listNutritionSources()]);
+  if (!canShowFarmData(generation)) return;
+  $("#feed-count").textContent = feeds.length + (feeds.length === 1 ? " feed" : " feeds");
+  $("#feed-source-count").textContent = sources.length + (sources.length === 1 ? " source" : " sources");
+  $("#feed-empty").hidden = feeds.length > 0;
+  $("#feed-source-empty").hidden = sources.length > 0;
+  $("#feed-list").innerHTML = feeds.map((feed) => '<button type="button" class="feed-row" data-feed-id="' +
+    escapeHtml(feed.id) + '"><span><strong>' + escapeHtml(feed.name) + '</strong><small>' +
+    escapeHtml(feedRoleLabels[feed.role] || feed.role) + '</small></span><span aria-hidden="true">Review →</span></button>').join("");
+  $("#feed-source-list").innerHTML = sources.map((source) => '<div class="evidence-row"><strong>' +
+    escapeHtml(source.title) + '</strong><small>' + escapeHtml(source.sourceType.replaceAll("_", " ")) +
+    (source.publicationYear ? " · " + source.publicationYear : "") + '</small><small>' +
+    escapeHtml(source.citation) + '</small></div>').join("");
+  renderFeedOptions(feeds, sources);
+  if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
+  if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
+  await renderNutritionProfile(selectedFeedId, generation);
+}
+
+async function handleFeedSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration;
+  try {
+    const feed = await FarmRepository.createFeed({ name: $("#feed-name").value, role: $("#feed-role").value });
+    if (!canShowFarmData(generation)) return;
+    event.currentTarget.reset(); selectedFeedId = feed.id; await refreshFeedWorkspace(generation);
+    setStatus("Feed added to this farm library.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleFeedSourceSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration;
+  try {
+    await FarmRepository.createNutritionSource({ title: $("#feed-source-title").value,
+      sourceType: $("#feed-source-type").value, citation: $("#feed-source-citation").value,
+      publisher: $("#feed-source-publisher").value, publicationYear: $("#feed-source-year").value,
+      url: $("#feed-source-url").value });
+    if (!canShowFarmData(generation)) return;
+    event.currentTarget.reset(); await refreshFeedWorkspace(generation);
+    setStatus("Evidence source saved for review.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleFeedObservationSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration;
+  try {
+    const feedId = $("#feed-observation-feed").value;
+    await FarmRepository.createNutritionObservation(feedId, { sourceId: $("#feed-observation-source").value,
+      nutrientCode: $("#feed-observation-nutrient").value, value: $("#feed-observation-value").value,
+      unit: $("#feed-observation-unit").value, basis: $("#feed-observation-basis").value,
+      evidenceClass: $("#feed-observation-evidence").value,
+      observedAt: $("#feed-observation-date").value || null, rangeMin: $("#feed-observation-min").value,
+      rangeMax: $("#feed-observation-max").value, sampleCount: $("#feed-observation-samples").value,
+      context: $("#feed-observation-context").value });
+    if (!canShowFarmData(generation)) return;
+    event.currentTarget.reset(); selectNutritionMetric(); selectedFeedId = feedId;
+    await refreshFeedWorkspace(generation); setStatus("Nutrition observation saved for review only.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
 function showView(viewName) {
@@ -646,6 +769,7 @@ async function refreshAll(generation = accessGeneration) {
   await refreshAnimalData(generation);
   await refreshDashboard(generation);
   await refreshFinance(generation);
+  await refreshFeedWorkspace(generation);
 }
 
 export async function initApp() {
@@ -657,6 +781,8 @@ export async function initApp() {
   $("#finance-date").value = toLocalDateString();
   selectFinanceDirection("income");
   selectMilkSession("morning");
+  $("#feed-observation-evidence").replaceChildren(...evidenceClasses.map(([value, label]) => new Option(label, value)));
+  selectNutritionMetric();
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.nav));
@@ -681,6 +807,16 @@ export async function initApp() {
   $("#breeding-form").addEventListener("submit", handleBreedingSubmit);
   $("#health-form").addEventListener("submit", handleHealthSubmit);
   $("#finance-form").addEventListener("submit", handleFinanceSubmit);
+  $("#feed-form").addEventListener("submit", handleFeedSubmit);
+  $("#feed-source-form").addEventListener("submit", handleFeedSourceSubmit);
+  $("#feed-observation-form").addEventListener("submit", handleFeedObservationSubmit);
+  $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
+  $("#feed-list").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-feed-id]");
+    if (!row) return;
+    $("#feed-observation-feed").value = row.dataset.feedId;
+    renderNutritionProfile(row.dataset.feedId).catch((error) => setStatus(error.message, "error"));
+  });
   document.querySelectorAll("[data-finance-direction]").forEach((button) => {
     button.addEventListener("click", () => selectFinanceDirection(button.dataset.financeDirection));
   });
