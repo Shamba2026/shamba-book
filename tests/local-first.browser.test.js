@@ -145,6 +145,11 @@ try {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(origin);
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await page.locator("#auth-lock-message").isVisible(), true);
+  assert.match(await page.locator("#auth-lock-message").textContent(), /Your herd records, clear and close at hand/);
+  assert.equal(await page.locator(".landing-features article").count(), 4);
+  await mkdir(artifactDir, { recursive: true });
+  await page.screenshot({ path: path.join(artifactDir, "signed-out-landing.png"), fullPage: true });
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
   assert.equal(await page.locator("#sync-count").textContent(), "0");
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
@@ -154,6 +159,7 @@ try {
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
+  assert.equal(await page.locator("#auth-lock-message").isVisible(), false, "landing content should disappear after authentication");
   assert.equal(await page.locator("#auth-restore").isVisible(), false, "cloud restore must stay unavailable");
   assert.equal(await page.locator("#auth-restore").isEnabled(), false, "cloud restore must be disabled");
   const statusBeforeRestoreAttempt = await page.locator("#app-status").textContent();
@@ -178,6 +184,17 @@ try {
   await page.locator('#app-status:has-text("Animal saved on this device.")').waitFor();
   await visibleAnimal(page);
   const id = await localState(page);
+
+  const farmSwitchRejected = await page.evaluate(async ({ animalId, farmId }) => {
+    const repository = await import("/src/storage/farm-repository.js?build=20260921-05");
+    repository.setActiveFarm(farmId);
+    const save = repository.saveMilkRecord({ animalId, localDate: "2026-09-21", session: "afternoon", liters: 1 });
+    repository.setActiveFarm("00000000-0000-4000-8000-000000000002");
+    try { await save; return false; } catch (error) { return /Farm session changed/.test(error.message); }
+    finally { repository.setActiveFarm(farmId); }
+  }, { animalId: id, farmId: APP_CONFIG.cloud.farmId });
+  assert.equal(farmSwitchRejected, true, "a farm switch during validation must abort the record save");
+  assert.equal((await storedRows(page, "records")).some((row) => row.session === "afternoon"), false);
 
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
