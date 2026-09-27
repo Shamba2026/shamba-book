@@ -17,8 +17,11 @@ function farmRows(rows) {
 }
 
 async function requireAnimal(animalId) {
+  const farmId = requireFarm();
   const animal = await get("animals", animalId);
-  if (!animal || animal.farmId !== requireFarm()) throw new Error("Animal is not in the active farm.");
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  if (!animal || animal.farmId !== farmId) throw new Error("Animal is not in the active farm.");
+  return farmId;
 }
 
 function newId() {
@@ -107,12 +110,12 @@ export async function getAnimal(animalId) {
 }
 
 export async function saveMilkRecord(input) {
-  await requireAnimal(input.animalId);
+  const farmId = await requireAnimal(input.animalId);
   const record = {
     id: newId(),
     clientId: newId(),
     kind: "milk",
-    farmId: requireFarm(),
+    farmId,
     animalId: input.animalId,
     localDate: input.localDate,
     session: input.session,
@@ -128,12 +131,12 @@ export async function saveMilkRecord(input) {
 }
 
 export async function saveWeightRecord(input) {
-  await requireAnimal(input.animalId);
+  const farmId = await requireAnimal(input.animalId);
   const record = {
     id: newId(),
     clientId: newId(),
     kind: "weight",
-    farmId: requireFarm(),
+    farmId,
     animalId: input.animalId,
     localDate: input.localDate,
     kilograms: Number(input.kilograms),
@@ -148,13 +151,13 @@ export async function saveWeightRecord(input) {
 }
 
 export async function saveGenericRecord(kind, payload) {
-  if (payload.animalId) await requireAnimal(payload.animalId);
+  const farmId = payload.animalId ? await requireAnimal(payload.animalId) : requireFarm();
   const record = {
     id: newId(),
     clientId: newId(),
     kind,
     ...payload,
-    farmId: requireFarm(),
+    farmId,
     createdAt: now(),
     updatedAt: now()
   };
