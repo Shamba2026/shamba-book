@@ -64,8 +64,10 @@ const context = vm.createContext({
       return [];
     }
   },
-  APP_CONFIG: { cloud: { enabled: false } },
+  APP_CONFIG: { cloud: { enabled: false, farmId: "synthetic-farm" } },
+  verifyFarmAccess: async () => "synthetic-farm",
   FarmRepository: {
+    setActiveFarm() {},
     listAnimals: () => animalRead,
     getHerdSummary: () => dashboardRead,
     getTodayMilkSummary: async () => ({ totalLiters: 0 }),

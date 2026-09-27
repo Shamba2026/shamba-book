@@ -1,5 +1,29 @@
 import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260921-03";
 
+let activeFarmId = null;
+
+export function setActiveFarm(farmId) {
+  activeFarmId = farmId || null;
+}
+
+function requireFarm() {
+  if (!activeFarmId) throw new Error("Verify farm membership before accessing local records.");
+  return activeFarmId;
+}
+
+function farmRows(rows) {
+  const farmId = requireFarm();
+  return rows.filter((row) => row.farmId === farmId);
+}
+
+async function requireAnimal(animalId) {
+  const farmId = requireFarm();
+  const animal = await get("animals", animalId);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  if (!animal || animal.farmId !== farmId) throw new Error("Animal is not in the active farm.");
+  return farmId;
+}
+
 function newId() {
   return crypto.randomUUID();
 }
@@ -11,6 +35,7 @@ function now() {
 function queuedRecord(record) {
   return {
     id: record.id,
+    farmId: record.farmId,
     recordType: record.kind || "animal",
     recordId: record.id,
     status: "pending",
@@ -22,7 +47,7 @@ function queuedRecord(record) {
 }
 
 async function assertUniqueAnimalCode(animalCode, existingId = null) {
-  const animals = await getAll("animals");
+  const animals = farmRows(await getAll("animals"));
   const duplicate = animals.find(
     (animal) =>
       animal.animalCode.toLocaleLowerCase() === animalCode.toLocaleLowerCase() &&
@@ -34,10 +59,17 @@ async function assertUniqueAnimalCode(animalCode, existingId = null) {
 }
 
 export async function saveAnimal(animal, photoBlob) {
+  const farmId = requireFarm();
+  if (animal.id) {
+    const existing = await get("animals", animal.id);
+    if (existing && existing.farmId !== farmId) throw new Error("Animal is not in the active farm.");
+  }
   await assertUniqueAnimalCode(animal.animalCode, animal.id || null);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
 
   const animalRecord = {
     ...animal,
+    farmId,
     id: animal.id || newId(),
     clientId: animal.clientId || newId(),
     kind: "animal",
@@ -48,6 +80,7 @@ export async function saveAnimal(animal, photoBlob) {
 
   const attachment = {
     id: animalRecord.photoAttachmentId,
+    farmId,
     ownerId: animalRecord.id,
     kind: "animal_profile_photo",
     filename: String(animalRecord.animalCode).replace(/[^a-z0-9_-]/gi, "_") + ".jpg",
@@ -65,22 +98,24 @@ export async function saveAnimal(animal, photoBlob) {
 }
 
 export async function listAnimals() {
-  const animals = await getAll("animals");
+  const animals = farmRows(await getAll("animals"));
   return animals.sort((a, b) => a.animalCode.localeCompare(b.animalCode));
 }
 
 export async function getAnimal(animalId) {
   const animal = await get("animals", animalId);
-  if (!animal) return null;
+  if (!animal || animal.farmId !== requireFarm()) return null;
   const attachment = await get("attachments", animal.photoAttachmentId);
-  return { animal, photo: attachment ? attachment.blob : null };
+  return { animal, photo: attachment?.farmId === requireFarm() ? attachment.blob : null };
 }
 
 export async function saveMilkRecord(input) {
+  const farmId = await requireAnimal(input.animalId);
   const record = {
     id: newId(),
     clientId: newId(),
     kind: "milk",
+    farmId,
     animalId: input.animalId,
     localDate: input.localDate,
     session: input.session,
@@ -96,10 +131,12 @@ export async function saveMilkRecord(input) {
 }
 
 export async function saveWeightRecord(input) {
+  const farmId = await requireAnimal(input.animalId);
   const record = {
     id: newId(),
     clientId: newId(),
     kind: "weight",
+    farmId,
     animalId: input.animalId,
     localDate: input.localDate,
     kilograms: Number(input.kilograms),
@@ -114,11 +151,13 @@ export async function saveWeightRecord(input) {
 }
 
 export async function saveGenericRecord(kind, payload) {
+  const farmId = payload.animalId ? await requireAnimal(payload.animalId) : requireFarm();
   const record = {
     id: newId(),
     clientId: newId(),
     kind,
     ...payload,
+    farmId,
     createdAt: now(),
     updatedAt: now()
   };
@@ -130,12 +169,12 @@ export async function saveGenericRecord(kind, payload) {
 }
 
 export async function getPendingSyncCount() {
-  const rows = await getAll("sync_queue");
+  const rows = farmRows(await getAll("sync_queue"));
   return rows.filter((item) => item.status === "pending" || item.status === "failed").length;
 }
 
 export async function getTodayMilkSummary(localDate) {
-  const records = await getAll("records");
+  const records = farmRows(await getAll("records"));
   const milk = records.filter((r) => r.kind === "milk" && r.localDate === localDate);
   const bySession = Object.fromEntries(["morning", "afternoon", "evening"].map((session) => [
     session,
@@ -149,7 +188,7 @@ export async function getTodayMilkSummary(localDate) {
 }
 
 export async function listMilkRecordsForDate(localDate) {
-  const records = await getAll("records");
+  const records = farmRows(await getAll("records"));
   return records.filter((record) => record.kind === "milk" && record.localDate === localDate);
 }
 
