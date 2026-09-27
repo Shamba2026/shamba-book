@@ -1,5 +1,5 @@
-import { get, claimLegacyAnimalAtomically } from "./local-db.js?build=20260927-01";
-import { inspectRecoveryBackup, readRecoveryEvidence } from "./recovery-preflight.js?build=20260927-01";
+import { get, claimLegacyAnimalAtomically } from "./local-db.js?build=20260927-02";
+import { inspectRecoveryBackup, readRecoveryEvidence } from "./recovery-preflight.js?build=20260927-02";
 import { verifyFarmAccess } from "../farm-access.js";
 
 export async function claimLegacyAnimal({ client, userId, animalId, animalCode, file, signal, assertCurrent }) {

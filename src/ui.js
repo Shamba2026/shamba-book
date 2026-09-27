@@ -2,12 +2,12 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20260927-01";
+import * as FarmRepository from "./storage/farm-repository.js?build=20260927-02";
 import { getAuthClient } from "./auth.js";
-import { verifyFarmAccess } from "./farm-access.js?build=20260927-01";
-import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-01";
-import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20260927-01";
-import { startSyncLoop } from "./sync/sync-engine.js?build=20260927-01";
+import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
+import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
+import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20260927-02";
+import { startSyncLoop } from "./sync/sync-engine.js?build=20260927-02";
 
 const $ = (selector) => document.querySelector(selector);
 let signedIn = false;

@@ -1,6 +1,6 @@
 import { APP_CONFIG } from "../config.js";
-import { getAll, put, deleteItem } from "../storage/local-db.js?build=20260927-01";
-import { push } from "../cloud/supabase-adapter.js?build=20260927-01";
+import { getAll, put, deleteItem } from "../storage/local-db.js?build=20260927-02";
+import { push } from "../cloud/supabase-adapter.js?build=20260927-02";
 
 function backoff(attempts) {
   return Math.min(60000, Math.max(1000, 2 ** attempts * 1000));
