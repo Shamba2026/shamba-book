@@ -1,4 +1,4 @@
-import { getAll, recoveryRowSnapshot } from "./local-db.js?build=20260922-03";
+import { getAll, recoveryRowSnapshot } from "./local-db.js?build=20260927-01";
 
 // The existing evidence exporter serializes binary attachments as base64. This
 // comparison runs entirely in the browser and never uploads or imports a file.

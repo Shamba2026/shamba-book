@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -54,9 +54,23 @@ export function openLocalDatabase() {
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings", { keyPath: "key" });
       }
+
+      // Version 2 is additive: existing farm rows are never read, rewritten or
+      // deleted during the upgrade. A failed upgrade therefore rolls back the
+      // new store and leaves the version 1 database intact.
+      if (!db.objectStoreNames.contains("feed_library")) {
+        const store = db.createObjectStore("feed_library", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("farmNameKey", "farmNameKey", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+    request.onblocked = () => reject(new Error("Close other Ngombe Herdbook tabs before upgrading local storage."));
     request.onerror = () => reject(request.error || new Error("Could not open local farm database."));
   });
 }
