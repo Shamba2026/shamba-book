@@ -1,4 +1,4 @@
-import { initApp } from "./ui.js?build=20260927-05";
+import { initApp } from "./ui.js?build=20260928-01";
 
 const errorBox = document.querySelector("#fatal-error");
 
