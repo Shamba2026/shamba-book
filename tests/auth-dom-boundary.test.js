@@ -66,12 +66,14 @@ const context = vm.createContext({
   },
   APP_CONFIG: { cloud: { enabled: false, farmId: "synthetic-farm" } },
   verifyFarmAccess: async () => "synthetic-farm",
+  Option: function Option(text, value) { return { text, value }; },
   FarmRepository: {
     setActiveFarm() {},
     listAnimals: () => animalRead,
     getHerdSummary: () => dashboardRead,
     getTodayMilkSummary: async () => ({ totalLiters: 0 }),
     listMilkRecordsForDate: async () => [],
+    listFinanceEntries: async () => [],
     getPendingSyncCount: async () => 1,
     getAnimal: async () => ({ animal, photo: {} })
   },
@@ -81,6 +83,9 @@ const context = vm.createContext({
   calculateMilkValue: () => 0,
   getMilkWeekPeriod: () => ({ start: "2026-09-19", end: "2026-09-25" }),
   animalTypeLabel: () => "Other",
+  filterFinanceEntries: (entries) => entries,
+  summarizeFinanceEntries: () => ({ incomeCents: 0, expenseCents: 0, netCents: 0, categoryTotals: [] }),
+  formatFinanceMoney: () => "KSh 0.00",
   URL: { createObjectURL: () => "blob:test-photo", revokeObjectURL() {} },
   navigator: { onLine: true },
   console
