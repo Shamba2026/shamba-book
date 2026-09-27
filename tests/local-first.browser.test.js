@@ -129,6 +129,11 @@ try {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(origin);
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await page.locator("#auth-lock-message").isVisible(), true);
+  assert.match(await page.locator("#auth-lock-message").textContent(), /Your herd records, clear and close at hand/);
+  assert.equal(await page.locator(".landing-features article").count(), 4);
+  await mkdir(artifactDir, { recursive: true });
+  await page.screenshot({ path: path.join(artifactDir, "signed-out-landing.png"), fullPage: true });
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
   assert.equal(await page.locator("#sync-count").textContent(), "0");
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
@@ -138,6 +143,7 @@ try {
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
+  assert.equal(await page.locator("#auth-lock-message").isVisible(), false, "landing content should disappear after authentication");
   assert.equal(await page.locator("#auth-restore").isVisible(), false, "cloud restore must stay unavailable");
   assert.equal(await page.locator("#auth-restore").isEnabled(), false, "cloud restore must be disabled");
   const statusBeforeRestoreAttempt = await page.locator("#app-status").textContent();
