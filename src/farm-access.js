@@ -1,5 +1,5 @@
 import { APP_CONFIG } from "./config.js";
-import { get, put } from "./storage/local-db.js";
+import { get, put } from "./storage/local-db.js?build=20260927-01";
 
 // Membership evidence is per signed-in user and configured farm. Cached evidence
 // permits offline work only after a successful online membership check.

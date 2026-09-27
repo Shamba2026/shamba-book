@@ -1,4 +1,4 @@
-import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260921-03";
+import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260927-01";
 
 let activeFarmId = null;
 
@@ -30,6 +30,30 @@ function newId() {
 
 function now() {
   return new Date().toISOString();
+}
+
+const FEED_ROLES = new Set(["forage", "concentrate", "mineral", "other"]);
+
+function feedName(value) {
+  const name = String(value || "").trim().replace(/\s+/g, " ");
+  if (!name || name.length > 120) throw new Error("Feed name must be between 1 and 120 characters.");
+  return name;
+}
+
+function feedRole(value) {
+  if (!FEED_ROLES.has(value)) throw new Error("Select a valid feed role.");
+  return value;
+}
+
+function feedNameKey(farmId, name) {
+  return farmId + ":" + name.toLocaleLowerCase();
+}
+
+async function assertUniqueFeedName(farmId, name, existingId = null) {
+  const duplicate = (await getAll("feed_library")).find((feed) =>
+    feed.farmId === farmId && feed.status !== "archived" && feed.id !== existingId &&
+    feed.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (duplicate) throw new Error('Feed "' + name + '" is already in this farm library.');
 }
 
 function queuedRecord(record) {
@@ -173,6 +197,63 @@ export async function listFinanceEntries() {
     .filter((row) => row.kind === "finance" && ["income", "expense"].includes(row.direction) &&
       Number.isSafeInteger(row.amountCents) && row.amountCents > 0)
     .sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt));
+}
+
+// This storage-only feed registry deliberately contains no nutrient reference
+// values. Nutrition evidence and TMR linkage are separate controlled units.
+export async function createFeed(input) {
+  const farmId = requireFarm();
+  const name = feedName(input?.name);
+  const role = feedRole(input?.role);
+  await assertUniqueFeedName(farmId, name);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const feed = {
+    id: newId(), farmId, name, role, status: "active",
+    farmNameKey: feedNameKey(farmId, name), createdAt: timestamp, updatedAt: timestamp
+  };
+  await putAtomically([{ storeName: "feed_library", value: feed }]);
+  return feed;
+}
+
+export async function listFeeds({ includeArchived = false } = {}) {
+  return farmRows(await getAll("feed_library"))
+    .filter((feed) => includeArchived || feed.status !== "archived")
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getFeed(feedId, { includeArchived = false } = {}) {
+  const feed = await get("feed_library", feedId);
+  if (!feed || feed.farmId !== requireFarm() || (!includeArchived && feed.status === "archived")) return null;
+  return feed;
+}
+
+export async function updateFeed(feedId, input) {
+  const farmId = requireFarm();
+  const existing = await get("feed_library", feedId);
+  if (!existing || existing.farmId !== farmId || existing.status === "archived") {
+    throw new Error("Feed is not in the active farm library.");
+  }
+  const name = feedName(input?.name ?? existing.name);
+  const role = feedRole(input?.role ?? existing.role);
+  await assertUniqueFeedName(farmId, name, feedId);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const feed = { ...existing, name, role, farmNameKey: feedNameKey(farmId, name), updatedAt: now() };
+  await putAtomically([{ storeName: "feed_library", value: feed }]);
+  return feed;
+}
+
+export async function deleteFeed(feedId) {
+  const farmId = requireFarm();
+  const existing = await get("feed_library", feedId);
+  if (!existing || existing.farmId !== farmId || existing.status === "archived") {
+    throw new Error("Feed is not in the active farm library.");
+  }
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const feed = { ...existing, status: "archived", archivedAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_library", value: feed }]);
+  return feed;
 }
 
 export async function getPendingSyncCount() {
