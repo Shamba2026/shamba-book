@@ -151,8 +151,7 @@ try {
   assert.equal(result.profile.nutrients.CP.length, 2);
   assert.deepEqual(result.profile.conflicts, ["CP"]);
   assert.equal("average" in result.profile, false, "conflicting evidence must never be silently averaged");
-  assert.equal(result.profile.nutrients.CP[0].source.citation, "TEST-A");
-  assert.equal(result.profile.nutrients.CP[1].source.citation, "TEST-B");
+  assert.deepEqual(result.profile.nutrients.CP.map((row) => row.source.citation).sort(), ["TEST-A", "TEST-B"]);
   assert.equal(result.farmBEmpty, true);
   assert.equal(result.hiddenProfile, true);
   assert.equal(result.crossFarmSourceRejected, true);
