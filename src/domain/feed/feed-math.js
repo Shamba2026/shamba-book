@@ -36,7 +36,7 @@ export function calculateRation(rows) {
   let forageDMKg = 0;
   let totalMEMJ = 0;
   let totalCPKg = 0;
-  let exactCostCents = 0;
+  let totalCostCents = 0;
 
   const ingredients = rows.map((row) => {
     const feed = row?.feed;
@@ -47,14 +47,14 @@ export function calculateRation(rows) {
     const dmKg = asFedKg * (dmPercent / 100);
     const meMJ = dmKg * meMJPerKgDM;
     const cpKg = dmKg * (cpPercentDM / 100);
-    const costCents = (asFedKg / 1000) * feed.costPerAsFedTonneCents;
+    const costCents = Math.round((asFedKg / 1000) * feed.costPerAsFedTonneCents);
 
     totalAsFedKg += asFedKg;
     totalDMIKg += dmKg;
     if (feed.role === "forage") forageDMKg += dmKg;
     totalMEMJ += meMJ;
     totalCPKg += cpKg;
-    exactCostCents += costCents;
+    totalCostCents += costCents;
 
     return Object.freeze({
       feedId: feed.id,
@@ -64,12 +64,12 @@ export function calculateRation(rows) {
       dmKg,
       meMJ,
       cpKg,
-      costCents: Math.round(costCents)
+      costCents
     });
   });
 
   if (totalDMIKg <= 0) throw new Error("Total dry matter intake must be greater than zero.");
-  if (!Number.isSafeInteger(Math.round(exactCostCents))) throw new Error("Ration cost is outside the supported range.");
+  if (!Number.isSafeInteger(totalCostCents)) throw new Error("Ration cost is outside the supported range.");
 
   return Object.freeze({
     ingredients: Object.freeze(ingredients),
@@ -80,7 +80,7 @@ export function calculateRation(rows) {
     totalCPKg,
     meDensityMJPerKgDM: totalMEMJ / totalDMIKg,
     cpPercentDM: (totalCPKg / totalDMIKg) * 100,
-    totalCostCents: Math.round(exactCostCents)
+    totalCostCents
   });
 }
 

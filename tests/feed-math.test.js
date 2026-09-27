@@ -35,6 +35,16 @@ assert.equal(result.meDensityMJPerKgDM, 88.2 / 8.6);
 assert.equal(result.cpPercentDM, (1.248 / 8.6) * 100);
 assert.equal(result.totalCostCents, 53500);
 
+const roundedLines = calculateRation([
+  { feed: { ...napier, id: "line-a", costPerAsFedTonneCents: 1600 }, asFedKg: 1 },
+  { feed: { ...napier, id: "line-b", costPerAsFedTonneCents: 1600 }, asFedKg: 1 }
+]);
+assert.equal(roundedLines.totalCostCents, 4);
+assert.equal(
+  roundedLines.totalCostCents,
+  roundedLines.ingredients.reduce((sum, ingredient) => sum + ingredient.costCents, 0)
+);
+
 assert.throws(
   () => calculateRation([{ feed: napier, asFedKg: 0 }]),
   /greater than zero/
