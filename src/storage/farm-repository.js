@@ -1,4 +1,5 @@
-import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260927-01";
+import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260927-02";
+import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js";
 
 let activeFarmId = null;
 
@@ -254,6 +255,73 @@ export async function deleteFeed(feedId) {
   const feed = { ...existing, status: "archived", archivedAt: timestamp, updatedAt: timestamp };
   await putAtomically([{ storeName: "feed_library", value: feed }]);
   return feed;
+}
+
+export async function createNutritionSource(input) {
+  const farmId = requireFarm();
+  const validated = validateNutritionSource(input);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const source = { id: newId(), farmId, ...validated, status: "active", createdAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_sources", value: source }]);
+  return source;
+}
+
+export async function listNutritionSources({ includeArchived = false } = {}) {
+  return farmRows(await getAll("feed_sources"))
+    .filter((source) => includeArchived || source.status !== "archived")
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export async function archiveNutritionSource(sourceId) {
+  const farmId = requireFarm();
+  const source = await get("feed_sources", sourceId);
+  if (!source || source.farmId !== farmId || source.status === "archived") {
+    throw new Error("Nutrition source is not active in this farm.");
+  }
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const archived = { ...source, status: "archived", archivedAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_sources", value: archived }]);
+  return archived;
+}
+
+export async function createNutritionObservation(feedId, input) {
+  const farmId = requireFarm();
+  const [feed, source] = await Promise.all([get("feed_library", feedId), get("feed_sources", input?.sourceId)]);
+  if (!feed || feed.farmId !== farmId || feed.status === "archived") throw new Error("Feed is not active in this farm library.");
+  if (!source || source.farmId !== farmId || source.status === "archived") throw new Error("Nutrition source is not active in this farm.");
+  const validated = validateNutritionObservation(input);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const observation = { id: newId(), farmId, feedId, ...validated, status: "active",
+    createdAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_observations", value: observation }]);
+  return observation;
+}
+
+export async function archiveNutritionObservation(observationId) {
+  const farmId = requireFarm();
+  const observation = await get("feed_observations", observationId);
+  if (!observation || observation.farmId !== farmId || observation.status === "archived") {
+    throw new Error("Nutrition observation is not active in this farm.");
+  }
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const archived = { ...observation, status: "archived", archivedAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_observations", value: archived }]);
+  return archived;
+}
+
+export async function getNutritionProfile(feedId, { includeArchived = false } = {}) {
+  const farmId = requireFarm();
+  const feed = await get("feed_library", feedId);
+  if (!feed || feed.farmId !== farmId || feed.status === "archived") return null;
+  const [observations, sources] = await Promise.all([getAll("feed_observations"), getAll("feed_sources")]);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
+  return buildNutritionProfile(feed,
+    observations.filter((row) => row.farmId === farmId && row.feedId === feedId && (includeArchived || row.status !== "archived")),
+    sources.filter((row) => row.farmId === farmId));
 }
 
 export async function getPendingSyncCount() {

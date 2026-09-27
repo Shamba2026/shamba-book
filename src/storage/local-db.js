@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -62,6 +62,21 @@ export function openLocalDatabase() {
         const store = db.createObjectStore("feed_library", { keyPath: "id" });
         store.createIndex("farmId", "farmId", { unique: false });
         store.createIndex("farmNameKey", "farmNameKey", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("feed_sources")) {
+        const store = db.createObjectStore("feed_sources", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("feed_observations")) {
+        const store = db.createObjectStore("feed_observations", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("feedId", "feedId", { unique: false });
+        store.createIndex("sourceId", "sourceId", { unique: false });
+        store.createIndex("nutrientCode", "nutrientCode", { unique: false });
         store.createIndex("status", "status", { unique: false });
       }
     };
