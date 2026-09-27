@@ -251,6 +251,22 @@ try {
   assert.equal((await storedRows(page, "animals")).some((row) => row.id === "TEST-ROLLBACK-ANIMAL"), false);
   assert.equal((await storedRows(page, "attachments")).some((row) => row.id === "TEST-ROLLBACK-PHOTO"), false);
 
+  const financeRolledBack = await page.evaluate(async () => {
+    const { putAtomically } = await import("/src/storage/local-db.js");
+    try {
+      await putAtomically([
+        { storeName: "records", value: { id: "TEST-ROLLBACK-FINANCE", kind: "finance",
+          direction: "expense", category: "Feed", amountCents: 100 } },
+        { storeName: "sync_queue", value: { id: "TEST-ROLLBACK-FINANCE", payload: () => {} } }
+      ]);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  assert.equal(financeRolledBack, true, "a failed finance queue write must abort the finance record write");
+  assert.equal((await storedRows(page, "records")).some((row) => row.id === "TEST-ROLLBACK-FINANCE"), false);
+
   await page.reload();
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-card").isVisible(), false);
@@ -449,8 +465,51 @@ try {
       animalId: "TEST-LEGACY-ID", animalCode: "TEST-UNOWNED-LEGACY", file, assertCurrent() {} });
   }, recoveryPreflight.backupJSON);
   assert.equal(repeat.status, "already_claimed");
+
+  await page.locator('button[data-nav="finance"]').click();
+  assert.equal(await page.locator("#finance-count").textContent(), "0 entries");
+  await page.screenshot({ path: path.join(artifactDir, "finance-desktop.png"), fullPage: true });
+  await page.locator("#finance-category").selectOption("Milk sale");
+  await page.locator("#finance-amount").fill("125.50");
+  await page.locator("#finance-details").fill("TEST FINANCE INCOME");
+  await page.locator("#finance-method").selectOption("M-Pesa");
+  await page.locator("#finance-reference").fill("TEST-CODE");
+  const invalidFinanceFields = await page.locator("#finance-form").evaluate((form) =>
+    [...form.elements].filter((field) => field.validity && !field.validity.valid)
+      .map((field) => ({ id: field.id, value: field.value, reason: field.validationMessage })));
+  assert.deepEqual(invalidFinanceFields, [], "finance form must be valid before synthetic save");
+  await page.locator("#finance-save").click();
+  await page.locator('#finance-count:has-text("1 entry")').waitFor();
+  await page.locator('[data-finance-direction="expense"]').click();
+  await page.locator("#finance-category").selectOption("Feed");
+  await page.locator("#finance-amount").fill("25.20");
+  await page.locator("#finance-details").fill("TEST FINANCE EXPENSE");
+  await page.locator("#finance-save").click();
+  await page.locator('#finance-count:has-text("2 entries")').waitFor();
+  assert.equal(await page.locator("#finance-net").textContent(), "KSh 100.30");
+  assert.match(await page.locator("#finance-category-summary").textContent(), /Milk sale\s+KSh 125\.50/);
+  assert.match(await page.locator("#finance-category-summary").textContent(), /Feed\s+KSh 25\.20/);
+  await page.locator("#finance-period").selectOption("all");
+  const financeRows = (await storedRows(page, "records")).filter((row) => row.kind === "finance");
+  assert.deepEqual(financeRows.map((row) => row.amountCents).sort((a, b) => a - b), [2520, 12550]);
+  assert.equal(financeRows.every((row) => row.farmId === APP_CONFIG.cloud.farmId), true);
+  assert.equal((await storedRows(page, "sync_queue")).filter((row) => row.recordType === "finance" &&
+    row.farmId === APP_CONFIG.cloud.farmId).length, 2);
+  await page.reload();
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator('button[data-nav="finance"]').click();
+  await page.locator('#finance-count:has-text("2 entries")').waitFor();
+  await page.close();
+  page = await context.newPage();
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto(origin);
+  await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator('button[data-nav="finance"]').click();
+  await page.locator('#finance-count:has-text("2 entries")').waitFor();
+  assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "finance").length, 2,
+    "reopening must not duplicate finance rows");
   assert.equal((await storedRows(page, "animals")).length, 2);
-  assert.equal((await storedRows(page, "sync_queue")).length, 3);
+  assert.equal((await storedRows(page, "sync_queue")).length, 5);
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
   assert.equal(await page.locator("#recovery-result").textContent(), "",
@@ -458,12 +517,15 @@ try {
   assert.equal(await page.locator("body").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false,
     "signed-out DOM must not retain the claimed animal code");
   assert.equal(await page.locator("#milk-checklist").textContent(), "");
+  assert.equal(await page.locator("#finance-list").textContent(), "");
+  assert.equal(await page.locator("body").textContent().then((text) => text.includes("TEST FINANCE INCOME")), false);
   assert.equal(await page.locator("body").textContent().then((text) => text.includes(animalCode)), false);
   await page.locator("#auth-email").fill("other@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
   assert.equal(await page.locator("#recovery-evidence").isVisible(), false);
+  assert.equal(await page.locator("#finance-list").textContent(), "");
   const outsiderClaim = await page.evaluate(async (json) => {
     const { claimLegacyAnimal } = await import("/src/storage/legacy-claim.js");
     const { getAuthClient } = await import("/src/auth.js");
@@ -485,6 +547,8 @@ try {
   await page.locator("#account-actions:not([hidden])").waitFor();
   await page.locator('button[data-nav="animals"]').click();
   await page.locator("#animal-list [data-animal-id]").filter({ hasText: "TEST-UNOWNED-LEGACY" }).waitFor();
+  await page.locator('button[data-nav="finance"]').click();
+  await page.locator('#finance-count:has-text("2 entries")').waitFor();
   const sameFarmRepeat = await page.evaluate(async (json) => {
     const { claimLegacyAnimal } = await import("/src/storage/legacy-claim.js");
     const { getAuthClient } = await import("/src/auth.js");

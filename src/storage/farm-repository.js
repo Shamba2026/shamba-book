@@ -168,6 +168,13 @@ export async function saveGenericRecord(kind, payload) {
   return record;
 }
 
+export async function listFinanceEntries() {
+  return farmRows(await getAll("records"))
+    .filter((row) => row.kind === "finance" && ["income", "expense"].includes(row.direction) &&
+      Number.isSafeInteger(row.amountCents) && row.amountCents > 0)
+    .sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt));
+}
+
 export async function getPendingSyncCount() {
   const rows = farmRows(await getAll("sync_queue"));
   return rows.filter((item) => item.status === "pending" || item.status === "failed").length;

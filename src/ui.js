@@ -1,7 +1,8 @@
 import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
-import { validateAnimal, validateMilk, validateWeight } from "./domain/validation.js";
-import * as FarmRepository from "./storage/farm-repository.js?build=20260921-05";
+import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
+import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
+import * as FarmRepository from "./storage/farm-repository.js?build=20260922-04";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260922-03";
@@ -13,7 +14,7 @@ let signedIn = false;
 let accessGeneration = 0;
 
 function clearFarmView() {
-  ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form"].forEach((selector) => {
+  ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -38,6 +39,12 @@ function clearFarmView() {
   $("#today-milk").textContent = "0.0 L";
   $("#today-value").textContent = "KSh 0";
   $("#week-period").textContent = "—";
+  $("#finance-list").replaceChildren();
+  $("#finance-category-summary").replaceChildren();
+  $("#finance-period").value = "month";
+  $("#finance-empty").hidden = false;
+  for (const id of ["#finance-income", "#finance-expense", "#finance-net"]) $(id).textContent = "KSh 0.00";
+  $("#finance-count").textContent = "0 entries";
 }
 
 const canShowFarmData = (generation) => signedIn && generation === accessGeneration;
@@ -194,6 +201,71 @@ function selectMilkSession(session) {
     button.setAttribute("aria-pressed", String(button.dataset.milkSession === session));
   });
   refreshMilkChecklist().catch((error) => setStatus("Milk records could not be checked: " + (error.message || error), "error"));
+}
+
+const financeCategories = {
+  income: ["Milk sale", "Animal sale", "Other income"],
+  expense: ["Feed", "Veterinary", "Labour", "Maintenance", "Transport", "Other expense"]
+};
+
+function selectFinanceDirection(direction) {
+  if (!financeCategories[direction]) return;
+  $("#finance-direction").value = direction;
+  $("#finance-category").replaceChildren(...financeCategories[direction].map((name) => new Option(name, name)));
+  $("#finance-save").textContent = direction === "income" ? "Save income locally" : "Save expense locally";
+  document.querySelectorAll("[data-finance-direction]").forEach((button) => {
+    const active = button.dataset.financeDirection === direction;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+async function refreshFinance(generation = accessGeneration) {
+  if (!canShowFarmData(generation)) return;
+  const allEntries = await FarmRepository.listFinanceEntries();
+  if (!canShowFarmData(generation)) return;
+  const entries = filterFinanceEntries(allEntries, $("#finance-period").value, toLocalDateString());
+  const summary = summarizeFinanceEntries(entries);
+  $("#finance-income").textContent = formatFinanceMoney(summary.incomeCents);
+  $("#finance-expense").textContent = formatFinanceMoney(summary.expenseCents);
+  $("#finance-net").textContent = formatFinanceMoney(summary.netCents);
+  $("#finance-count").textContent = entries.length + (entries.length === 1 ? " entry" : " entries");
+  $("#finance-empty").hidden = entries.length > 0;
+  $("#finance-category-summary").innerHTML = summary.categoryTotals.map((row) =>
+    '<span><b>' + escapeHtml(row.category) + '</b> ' + escapeHtml(formatFinanceMoney(row.amountCents)) + '</span>').join("");
+  $("#finance-list").innerHTML = entries.slice(0, 20).map((row) =>
+    '<div class="finance-entry"><div><strong>' + escapeHtml(row.category) + '</strong><small>' +
+    escapeHtml(row.localDate) + ' · ' + escapeHtml(row.details) + '</small><small>' +
+    escapeHtml(row.paymentMethod) + (row.paymentReference ? ' · ' + escapeHtml(row.paymentReference) : '') +
+    '</small></div><strong class="' + (row.direction === "income" ? "money-in" : "money-out") + '">' +
+    (row.direction === "income" ? "+" : "−") + formatFinanceMoney(row.amountCents) + '</strong></div>').join("");
+}
+
+async function handleFinanceSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const generation = accessGeneration;
+  if (!canShowFarmData(generation)) return;
+  const button = $("#finance-save");
+  if (button.disabled) return;
+  try {
+    button.disabled = true;
+    const entry = validateFinance({ direction: $("#finance-direction").value,
+      category: $("#finance-category").value, amount: $("#finance-amount").value,
+      localDate: $("#finance-date").value, details: $("#finance-details").value,
+      paymentMethod: $("#finance-method").value, paymentReference: $("#finance-reference").value });
+    if (!canShowFarmData(generation)) return;
+    await FarmRepository.saveGenericRecord("finance", entry);
+    if (!canShowFarmData(generation)) return;
+    form.reset();
+    selectFinanceDirection(entry.direction);
+    $("#finance-date").value = toLocalDateString();
+    await refreshFinance(generation);
+    await refreshDashboard(generation);
+    if (canShowFarmData(generation)) setStatus("Money entry saved on this device.", "success");
+  } catch (error) {
+    if (canShowFarmData(generation)) setStatus(error.message || String(error), "error");
+  } finally { button.disabled = false; }
 }
 
 async function refreshAnimalData(generation = accessGeneration) {
@@ -425,6 +497,7 @@ async function initAuth() {
     $("#milk-date").value = toLocalDateString();
     $("#weight-date").value = toLocalDateString();
     $("#health-date").value = toLocalDateString();
+    $("#finance-date").value = toLocalDateString();
     statusEl.textContent = "Signed in";
     signInButton.hidden = true;
     signOutButton.hidden = false;
@@ -572,6 +645,7 @@ async function initAuth() {
 async function refreshAll(generation = accessGeneration) {
   await refreshAnimalData(generation);
   await refreshDashboard(generation);
+  await refreshFinance(generation);
 }
 
 export async function initApp() {
@@ -580,6 +654,8 @@ export async function initApp() {
   $("#milk-date").value = toLocalDateString();
   $("#weight-date").value = toLocalDateString();
   $("#health-date").value = toLocalDateString();
+  $("#finance-date").value = toLocalDateString();
+  selectFinanceDirection("income");
   selectMilkSession("morning");
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
@@ -604,6 +680,11 @@ export async function initApp() {
   $("#weight-form").addEventListener("submit", handleWeightSubmit);
   $("#breeding-form").addEventListener("submit", handleBreedingSubmit);
   $("#health-form").addEventListener("submit", handleHealthSubmit);
+  $("#finance-form").addEventListener("submit", handleFinanceSubmit);
+  document.querySelectorAll("[data-finance-direction]").forEach((button) => {
+    button.addEventListener("click", () => selectFinanceDirection(button.dataset.financeDirection));
+  });
+  $("#finance-period").addEventListener("change", () => refreshFinance().catch((error) => setStatus(error.message, "error")));
 
   $("#animal-list").addEventListener("click", (event) => {
     const card = event.target.closest("[data-animal-id]");

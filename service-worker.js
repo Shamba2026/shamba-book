@@ -1,10 +1,10 @@
-const CACHE_NAME = "ngombe-herdbook-shell-v19";
+const CACHE_NAME = "ngombe-herdbook-shell-v20";
 const ASSETS = [
-  "./","./index.html","./manifest.json","./styles/app.css?build=20260927-02",
-  "./src/main.js?build=20260922-03","./src/ui.js?build=20260922-03","./src/auth.js","./src/config.js","./src/farm-access.js",
-  "./src/domain/farm-rules.js","./src/domain/validation.js",
-  "./src/storage/local-db.js?build=20260922-03",
-  "./src/storage/farm-repository.js?build=20260921-05","./src/storage/recovery-preflight.js?build=20260922-03","./src/storage/legacy-claim.js?build=20260922-03",
+  "./","./index.html","./manifest.json","./styles/app.css?build=20260927-03",
+  "./src/main.js?build=20260922-04","./src/ui.js?build=20260922-04","./src/auth.js","./src/config.js","./src/farm-access.js",
+  "./src/domain/farm-rules.js","./src/domain/validation.js?build=20260922-04","./src/domain/finance.js?build=20260927-01",
+  "./src/storage/local-db.js?build=20260922-03","./src/storage/farm-repository.js?build=20260922-04",
+  "./src/storage/recovery-preflight.js?build=20260922-03","./src/storage/legacy-claim.js?build=20260922-03",
   "./src/cloud/supabase-adapter.js","./src/sync/sync-engine.js"
 ];
 
