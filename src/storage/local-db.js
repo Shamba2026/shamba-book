@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -95,6 +95,23 @@ export function openLocalDatabase() {
         store.createIndex("costSourceId", "costSourceId", { unique: false });
         store.createIndex("status", "status", { unique: false });
       }
+
+      // Version 5 adds immutable inventory movements and explicit nutrition
+      // selections. Neither store is consumed by ration or TMR calculations.
+      if (!db.objectStoreNames.contains("feed_inventory_movements")) {
+        const store = db.createObjectStore("feed_inventory_movements", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("batchId", "batchId", { unique: false });
+        store.createIndex("movementDate", "movementDate", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("feed_nutrition_selections")) {
+        const store = db.createObjectStore("feed_nutrition_selections", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("feedId", "feedId", { unique: false });
+        store.createIndex("nutrientCode", "nutrientCode", { unique: false });
+        store.createIndex("observationId", "observationId", { unique: false });
+      }
     };
 
     request.onsuccess = () => {
@@ -104,6 +121,27 @@ export function openLocalDatabase() {
     request.onblocked = () => reject(new Error("Close other Ngombe Herdbook tabs before upgrading local storage."));
     request.onerror = () => reject(request.error || new Error("Could not open local farm database."));
   });
+}
+
+export async function appendInventoryMovementAtomically({ farmId, batchId, movement, assertCurrent }) {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(["feed_inventory_batches", "feed_inventory_movements"], "readwrite");
+  const completed = transactionComplete(transaction);
+  try {
+    const batch = await requestResult(transaction.objectStore("feed_inventory_batches").get(batchId));
+    if (!batch || batch.farmId !== farmId || batch.status === "archived") throw new Error("Inventory batch is not active in this farm.");
+    const existing = await requestResult(transaction.objectStore("feed_inventory_movements").index("batchId").getAll(batchId));
+    const balance = batch.receivedQuantityKg + existing.reduce((sum, row) => sum + row.deltaQuantityKg, 0);
+    if (balance + movement.deltaQuantityKg < -0.0000001) throw new Error("Inventory movement exceeds the available batch quantity.");
+    assertCurrent();
+    transaction.objectStore("feed_inventory_movements").put(movement);
+    await completed;
+    return movement;
+  } catch (error) {
+    try { transaction.abort(); } catch { /* Transaction may already have completed. */ }
+    await completed.catch(() => {});
+    throw error;
+  } finally { db.close(); }
 }
 
 export async function put(storeName, value) {

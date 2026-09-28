@@ -1,6 +1,7 @@
-import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260928-01";
+import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20260928-02";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js";
-import { validateCostSource, validateInventoryBatch } from "../domain/feed/feed-inventory.js";
+import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js";
+import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js";
 
 let activeFarmId = null;
 
@@ -356,16 +357,65 @@ export async function createFeedInventoryBatch(feedId, input) {
 
 export async function listFeedInventoryBatches({ feedId = null, includeArchived = false } = {}) {
   const farmId = requireFarm();
-  const [batches, feeds, sources] = await Promise.all([
-    getAll("feed_inventory_batches"), getAll("feed_library"), getAll("feed_cost_sources")
+  const [batches, feeds, sources, movements] = await Promise.all([
+    getAll("feed_inventory_batches"), getAll("feed_library"), getAll("feed_cost_sources"), getAll("feed_inventory_movements")
   ]);
   if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
   const feedById = new Map(feeds.filter((row) => row.farmId === farmId).map((row) => [row.id, row]));
   const sourceById = new Map(sources.filter((row) => row.farmId === farmId).map((row) => [row.id, row]));
   return batches.filter((row) => row.farmId === farmId && (!feedId || row.feedId === feedId) &&
       (includeArchived || row.status !== "archived"))
-    .map((row) => ({ ...row, feed: feedById.get(row.feedId) || null, costSource: sourceById.get(row.costSourceId) || null }))
+    .map((row) => { const batchMovements = movements.filter((movement) => movement.farmId === farmId && movement.batchId === row.id);
+      const remainingQuantityKg = Math.max(0, Math.round((row.receivedQuantityKg +
+        batchMovements.reduce((sum, movement) => sum + movement.deltaQuantityKg, 0)) * 1000000) / 1000000);
+      return { ...row, remainingQuantityKg, movements: batchMovements,
+        feed: feedById.get(row.feedId) || null, costSource: sourceById.get(row.costSourceId) || null }; })
     .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function recordFeedInventoryMovement(batchId, input) {
+  const farmId = requireFarm();
+  const validated = validateInventoryMovement(input);
+  const timestamp = now();
+  const movement = { id: newId(), farmId, batchId, ...validated, createdAt: timestamp };
+  await appendInventoryMovementAtomically({ farmId, batchId, movement, assertCurrent: () => {
+    if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  } });
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  return movement;
+}
+
+export async function selectNutritionObservation(feedId, input) {
+  const farmId = requireFarm();
+  const validated = validateNutritionSelection(input);
+  const [feed, observation] = await Promise.all([get("feed_library", feedId), get("feed_observations", validated.observationId)]);
+  if (!feed || feed.farmId !== farmId || feed.status === "archived") throw new Error("Feed is not active in this farm library.");
+  if (!observation || observation.farmId !== farmId || observation.feedId !== feedId || observation.status === "archived") {
+    throw new Error("Nutrition observation is not active for this farm feed.");
+  }
+  const source = await get("feed_sources", observation.sourceId);
+  if (!source || source.farmId !== farmId || source.status === "archived") throw new Error("Nutrition source is not active in this farm.");
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const selection = { id: newId(), farmId, feedId, nutrientCode: observation.nutrientCode,
+    observationId: observation.id, rationale: validated.rationale, selectedAt: now() };
+  await putAtomically([{ storeName: "feed_nutrition_selections", value: selection }]);
+  return selection;
+}
+
+export async function getNutritionSelections(feedId) {
+  const farmId = requireFarm();
+  const [feed, events, observations, sources] = await Promise.all([get("feed_library", feedId),
+    getAll("feed_nutrition_selections"), getAll("feed_observations"), getAll("feed_sources")]);
+  if (!feed || feed.farmId !== farmId || feed.status === "archived") return null;
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
+  const observationById = new Map(observations.filter((row) => row.farmId === farmId).map((row) => [row.id, row]));
+  const sourceById = new Map(sources.filter((row) => row.farmId === farmId).map((row) => [row.id, row]));
+  const current = currentNutritionSelections(events.filter((row) => row.farmId === farmId && row.feedId === feedId));
+  return Object.freeze(Object.fromEntries(Object.entries(current).map(([code, selection]) => {
+    const observation = observationById.get(selection.observationId) || null;
+    return [code, Object.freeze({ ...selection, observation,
+      source: observation ? sourceById.get(observation.sourceId) || null : null })];
+  })));
 }
 
 export async function getPendingSyncCount() {

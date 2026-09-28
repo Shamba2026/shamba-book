@@ -1,4 +1,6 @@
 const COST_SOURCE_TYPES = new Set(["invoice", "receipt", "farm_production_cost", "market_quote", "opening_balance", "other"]);
+const MASS_FACTORS_KG = Object.freeze({ G_AS_FED: 0.001, KG_AS_FED: 1, METRIC_TONNE_AS_FED: 1000 });
+const MOVEMENT_SIGNS = Object.freeze({ CONSUMPTION: -1, WASTE: -1, CORRECTION_DECREASE: -1, CORRECTION_INCREASE: 1 });
 
 function requiredText(value, label, maximum) {
   const result = String(value || "").trim().replace(/\s+/g, " ");
@@ -41,7 +43,10 @@ export function validateCostSource(input) {
 export function validateInventoryBatch(input) {
   if (!input || typeof input !== "object") throw new Error("Inventory batch is required.");
   const receivedAt = requiredDate(input.receivedAt, "Received date");
-  const receivedQuantityKg = positiveNumber(input.receivedQuantityKg, "Received quantity");
+  const receivedMass = input.receivedQuantityKg != null
+    ? normalizeAsFedMass({ quantity: input.receivedQuantityKg, unit: "KG_AS_FED" })
+    : normalizeAsFedMass({ quantity: input.receivedQuantity, unit: input.inputUnit });
+  const receivedQuantityKg = receivedMass.quantityKg;
   if (receivedQuantityKg > 10000000) throw new Error("Received quantity is outside the supported range.");
   const totalCost = positiveNumber(input.totalCost, "Total batch cost");
   const totalCostCents = Math.round(totalCost * 100);
@@ -54,12 +59,36 @@ export function validateInventoryBatch(input) {
     receivedQuantityKg,
     remainingQuantityKg: receivedQuantityKg,
     unit: "KG_AS_FED",
+    inputQuantity: receivedMass.inputQuantity,
+    inputUnit: receivedMass.inputUnit,
     totalCostCents,
     currencyCode,
     lotReference: optionalText(input.lotReference, 120),
     storageLocation: optionalText(input.storageLocation, 160),
     notes: optionalText(input.notes, 500)
   });
+}
+
+export function normalizeAsFedMass(input) {
+  const inputUnit = String(input?.unit || "");
+  const factor = MASS_FACTORS_KG[inputUnit];
+  if (!factor) throw new Error("Unsupported as-fed mass unit.");
+  const inputQuantity = positiveNumber(input?.quantity, "Mass quantity");
+  const quantityKg = Math.round(inputQuantity * factor * 1000000) / 1000000;
+  if (quantityKg < 0.001 || quantityKg > 10000000) throw new Error("Mass quantity is outside the supported range.");
+  return Object.freeze({ inputQuantity, inputUnit, quantityKg, canonicalUnit: "KG_AS_FED" });
+}
+
+export function validateInventoryMovement(input) {
+  if (!input || typeof input !== "object") throw new Error("Inventory movement is required.");
+  const movementType = String(input.movementType || "");
+  const sign = MOVEMENT_SIGNS[movementType];
+  if (!sign) throw new Error("Unsupported inventory movement type.");
+  const mass = normalizeAsFedMass({ quantity: input.quantity, unit: input.unit });
+  return Object.freeze({ movementType, movementDate: requiredDate(input.movementDate, "Movement date"),
+    reason: requiredText(input.reason, "Movement reason", 240), inputQuantity: mass.inputQuantity,
+    inputUnit: mass.inputUnit, quantityKg: mass.quantityKg, deltaQuantityKg: sign * mass.quantityKg,
+    canonicalUnit: mass.canonicalUnit });
 }
 
 export function unitCostPerKg(batch) {
@@ -69,3 +98,5 @@ export function unitCostPerKg(batch) {
 }
 
 export const feedCostSourceTypes = Object.freeze([...COST_SOURCE_TYPES]);
+export const supportedAsFedMassUnits = Object.freeze(Object.keys(MASS_FACTORS_KG));
+export const feedInventoryMovementTypes = Object.freeze(Object.keys(MOVEMENT_SIGNS));
