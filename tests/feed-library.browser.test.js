@@ -114,7 +114,7 @@ try {
       archived, activeAfterDelete, allAfterDelete };
   });
 
-  assert.equal(result.upgradedState.version, 4);
+  assert.equal(result.upgradedState.version, 5);
   assert.equal(result.upgradedState.stores.includes("feed_library"), true);
   assert.deepEqual(result.preserved.rows, Object.fromEntries(Object.entries(result.sentinel).map(([name, row]) => [name, [row]])),
     "the additive upgrade must preserve every existing row");
