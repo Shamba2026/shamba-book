@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#123e2d">
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
   <link rel="manifest" href="./manifest.json?v=15">
-  <link rel="stylesheet" href="./styles/app.css?build=20260927-03">
+  <link rel="stylesheet" href="./styles/app.css?build=20260928-01">
   <style id="auth-critical-style">.auth-gated{display:none!important}.auth-lock-message{display:block}</style>
   <title>Ngombe Herdbook</title>
 </head>
@@ -60,6 +60,7 @@
           <button class="action" type="button" data-nav-action="weight"><strong>⚖ Record bull weight</strong><span>Weight in kg</span></button>
           <button class="action" type="button" data-nav-action="breeding"><strong>🐄 Record breeding</strong><span>Dairy service</span></button>
           <button class="action" type="button" data-nav-action="finance"><strong>💰 Finance</strong><span>Income and expenses</span></button>
+          <button class="action" type="button" data-nav-action="feeds"><strong>🌿 Feed library</strong><span>Sources and nutrition evidence</span></button>
         </div>
       </div>
 
@@ -168,6 +169,22 @@
         <div class="card"><div class="section-head"><h3>Recorded entries</h3><span id="finance-count" class="chip">0 entries</span></div><div class="field finance-period"><label for="finance-period">Report period</label><select id="finance-period"><option value="month">This month</option><option value="all">All recorded</option></select></div><div id="finance-category-summary" class="finance-category-summary" aria-label="Category totals"></div><p id="finance-empty" class="muted">No money entries recorded for this period.</p><div id="finance-list" class="animal-list"></div></div>
       </div>
     </section>
+
+    <section data-view="feeds" class="auth-gated" hidden>
+      <div class="card feed-hero"><div><p class="eyebrow">FARM FEED EVIDENCE</p><h2>Feed library</h2><p>Keep feed names, source documents and measured nutrition observations together for this farm.</p></div><div class="feed-safety"><strong>Review only</strong><span>These values are not connected to ration or TMR calculations.</span></div></div>
+      <div class="grid two feed-entry-grid">
+        <form id="feed-form" class="card"><div class="section-head"><h3>Add a farm feed</h3></div><div class="form-grid"><div class="field"><label for="feed-name">Feed name</label><input id="feed-name" maxlength="120" required placeholder="e.g. Napier grass batch"></div><div class="field"><label for="feed-role">Feed role</label><select id="feed-role" required><option value="forage">Forage</option><option value="concentrate">Concentrate</option><option value="mineral">Mineral</option><option value="other">Other</option></select></div><div class="field full"><button class="primary" type="submit">Add to farm library</button></div></div></form>
+        <form id="feed-source-form" class="card"><div class="section-head"><h3>Add an evidence source</h3></div><div class="form-grid"><div class="field full"><label for="feed-source-title">Source title</label><input id="feed-source-title" maxlength="200" required placeholder="Laboratory report or publication title"></div><div class="field"><label for="feed-source-type">Source type</label><select id="feed-source-type" required><option value="lab_report">Laboratory report</option><option value="research_publication">Research publication</option><option value="manufacturer_label">Manufacturer label</option><option value="farm_measurement">Farm measurement</option><option value="documented_model">Documented model</option><option value="other">Other</option></select></div><div class="field"><label for="feed-source-year">Publication year</label><input id="feed-source-year" type="number" min="1900" max="2100" step="1"></div><div class="field full"><label for="feed-source-citation">Citation / report reference</label><input id="feed-source-citation" maxlength="500" required placeholder="Enough detail to find the source again"></div><div class="field"><label for="feed-source-publisher">Publisher / laboratory</label><input id="feed-source-publisher" maxlength="200"></div><div class="field"><label for="feed-source-url">HTTPS link (optional)</label><input id="feed-source-url" type="url" maxlength="1000" placeholder="https://..."></div><div class="field full"><button class="primary" type="submit">Save evidence source</button></div></div></form>
+      </div>
+      <div class="grid two feed-review-grid">
+        <div class="card"><div class="section-head"><h3>Farm library</h3><span id="feed-count" class="chip">0 feeds</span></div><p id="feed-empty" class="muted">No feeds have been added for this farm.</p><div id="feed-list" class="feed-list"></div></div>
+        <div class="card"><div class="section-head"><h3>Evidence sources</h3><span id="feed-source-count" class="chip">0 sources</span></div><p id="feed-source-empty" class="muted">No nutrition sources have been recorded.</p><div id="feed-source-list" class="feed-list"></div></div>
+      </div>
+      <div class="grid two feed-observation-grid">
+        <form id="feed-observation-form" class="card"><div class="section-head"><h3>Record an observation</h3></div><div class="form-grid"><div class="field"><label for="feed-observation-feed">Feed</label><select id="feed-observation-feed" required></select></div><div class="field"><label for="feed-observation-source">Evidence source</label><select id="feed-observation-source" required></select></div><div class="field"><label for="feed-observation-nutrient">Nutrient</label><select id="feed-observation-nutrient" required><option value="DM">Dry matter (DM)</option><option value="ME">Metabolizable energy (ME)</option><option value="CP">Crude protein (CP)</option><option value="NDF">Neutral detergent fibre (NDF)</option><option value="ADF">Acid detergent fibre (ADF)</option><option value="STARCH">Starch</option><option value="FAT">Fat</option><option value="ASH">Ash</option><option value="CA">Calcium</option><option value="P">Phosphorus</option></select></div><div class="field"><label for="feed-observation-value">Observed value</label><input id="feed-observation-value" type="number" min="0" step="any" required></div><div class="field"><label for="feed-observation-unit">Unit</label><select id="feed-observation-unit" required></select></div><div class="field"><label for="feed-observation-basis">Basis</label><select id="feed-observation-basis" required></select></div><div class="field"><label for="feed-observation-evidence">Evidence class</label><select id="feed-observation-evidence" required><option value="VERIFIED_LAB">Verified laboratory</option><option value="RESEARCH_SUPPORTED">Research supported</option><option value="SUPPLIER_DECLARED">Supplier declared</option><option value="FARM_OBSERVED">Farm observed</option><option value="MODEL_DERIVED">Model derived</option><option value="UNKNOWN">Unknown</option></select></div><div class="field"><label for="feed-observation-date">Observation date</label><input id="feed-observation-date" type="date"></div><div class="field"><label for="feed-observation-min">Range minimum (optional)</label><input id="feed-observation-min" type="number" min="0" step="any"></div><div class="field"><label for="feed-observation-max">Range maximum (optional)</label><input id="feed-observation-max" type="number" min="0" step="any"></div><div class="field"><label for="feed-observation-samples">Sample count (optional)</label><input id="feed-observation-samples" type="number" min="1" step="1"></div><div class="field full"><label for="feed-observation-context">Context / sample notes</label><textarea id="feed-observation-context" maxlength="1000" rows="3" placeholder="What was sampled or observed?"></textarea></div><div class="field full"><button class="primary" type="submit">Save observation for review</button></div></div></form>
+        <div class="card"><div class="section-head"><div><p class="eyebrow">EVIDENCE REVIEW</p><h3 id="feed-profile-title">Select a feed</h3></div></div><p id="feed-profile-empty" class="muted">Choose a feed from the farm library to review its observations.</p><div id="feed-conflicts"></div><div id="feed-profile" class="feed-profile"></div></div>
+      </div>
+    </section>
   </main>
 
   <nav class="bottom-nav auth-gated" aria-label="Primary navigation">
@@ -204,7 +221,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20260927-05";
+      script.src = "./src/main.js?build=20260928-01";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {
