@@ -1,5 +1,6 @@
-import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260927-02";
+import { get, getAll, putAtomically, putMany } from "./local-db.js?build=20260928-01";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js";
+import { validateCostSource, validateInventoryBatch } from "../domain/feed/feed-inventory.js";
 
 let activeFarmId = null;
 
@@ -322,6 +323,49 @@ export async function getNutritionProfile(feedId, { includeArchived = false } = 
   return buildNutritionProfile(feed,
     observations.filter((row) => row.farmId === farmId && row.feedId === feedId && (includeArchived || row.status !== "archived")),
     sources.filter((row) => row.farmId === farmId));
+}
+
+export async function createFeedCostSource(input) {
+  const farmId = requireFarm();
+  const validated = validateCostSource(input);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const source = { id: newId(), farmId, ...validated, status: "active", createdAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_cost_sources", value: source }]);
+  return source;
+}
+
+export async function listFeedCostSources({ includeArchived = false } = {}) {
+  return farmRows(await getAll("feed_cost_sources"))
+    .filter((source) => includeArchived || source.status !== "archived")
+    .sort((a, b) => b.documentDate.localeCompare(a.documentDate) || a.reference.localeCompare(b.reference));
+}
+
+export async function createFeedInventoryBatch(feedId, input) {
+  const farmId = requireFarm();
+  const [feed, source] = await Promise.all([get("feed_library", feedId), get("feed_cost_sources", input?.costSourceId)]);
+  if (!feed || feed.farmId !== farmId || feed.status === "archived") throw new Error("Feed is not active in this farm library.");
+  if (!source || source.farmId !== farmId || source.status === "archived") throw new Error("Cost source is not active in this farm.");
+  const validated = validateInventoryBatch(input);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const batch = { id: newId(), farmId, feedId, ...validated, status: "active", createdAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_inventory_batches", value: batch }]);
+  return batch;
+}
+
+export async function listFeedInventoryBatches({ feedId = null, includeArchived = false } = {}) {
+  const farmId = requireFarm();
+  const [batches, feeds, sources] = await Promise.all([
+    getAll("feed_inventory_batches"), getAll("feed_library"), getAll("feed_cost_sources")
+  ]);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
+  const feedById = new Map(feeds.filter((row) => row.farmId === farmId).map((row) => [row.id, row]));
+  const sourceById = new Map(sources.filter((row) => row.farmId === farmId).map((row) => [row.id, row]));
+  return batches.filter((row) => row.farmId === farmId && (!feedId || row.feedId === feedId) &&
+      (includeArchived || row.status !== "archived"))
+    .map((row) => ({ ...row, feed: feedById.get(row.feedId) || null, costSource: sourceById.get(row.costSourceId) || null }))
+    .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function getPendingSyncCount() {

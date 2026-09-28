@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -77,6 +77,22 @@ export function openLocalDatabase() {
         store.createIndex("feedId", "feedId", { unique: false });
         store.createIndex("sourceId", "sourceId", { unique: false });
         store.createIndex("nutrientCode", "nutrientCode", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
+
+      // Version 4 remains additive. Inventory and cost provenance are stored
+      // separately from nutrition observations and are not connected to TMR.
+      if (!db.objectStoreNames.contains("feed_cost_sources")) {
+        const store = db.createObjectStore("feed_cost_sources", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains("feed_inventory_batches")) {
+        const store = db.createObjectStore("feed_inventory_batches", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("feedId", "feedId", { unique: false });
+        store.createIndex("costSourceId", "costSourceId", { unique: false });
         store.createIndex("status", "status", { unique: false });
       }
     };

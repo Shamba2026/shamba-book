@@ -57,12 +57,22 @@ try {
     await page.locator('#feed-observation-form button[type="submit"]').click(); await page.locator('#app-status:has-text("Nutrition observation saved")').waitFor();
   }
   await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
+  await page.locator("#feed-cost-type").selectOption("receipt"); await page.locator("#feed-cost-date").fill("2026-09-28");
+  await page.locator("#feed-cost-reference").fill("TEST-RECEIPT-001"); await page.locator("#feed-cost-counterparty").fill("Synthetic supplier");
+  await page.locator('#feed-cost-source-form button[type="submit"]').click(); await page.locator('#feed-cost-source-list:has-text("TEST-RECEIPT-001")').waitFor();
+  await page.locator("#feed-batch-feed").selectOption({ index: 1 }); await page.locator("#feed-batch-cost-source").selectOption({ index: 1 });
+  await page.locator("#feed-batch-date").fill("2026-09-28"); await page.locator("#feed-batch-quantity").fill("125.5");
+  await page.locator("#feed-batch-total-cost").fill("2500.25"); await page.locator("#feed-batch-lot").fill("TEST-LOT-001");
+  await page.locator('#feed-batch-form button[type="submit"]').click(); await page.locator('#feed-inventory-list:has-text("125.5 kg as fed")').waitFor();
   assert.equal((await rows(page, "feed_library")).length, 1); assert.equal((await rows(page, "feed_sources")).length, 1); assert.equal((await rows(page, "feed_observations")).length, 2);
+  assert.equal((await rows(page, "feed_cost_sources")).length, 1); assert.equal((await rows(page, "feed_inventory_batches")).length, 1);
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('[data-feed-id]:has-text("TEST feed evidence")').waitFor(); await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
+  await page.locator('#feed-inventory-list:has-text("TEST-RECEIPT-001")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor(); await page.waitForTimeout(100);
   assert.equal(await page.locator("#feed-list").textContent(), ""); assert.equal(await page.locator("#feed-source-list").textContent(), ""); assert.equal(await page.locator("#feed-profile").textContent(), "");
+  assert.equal(await page.locator("#feed-cost-source-list").textContent(), ""); assert.equal(await page.locator("#feed-inventory-list").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 2, "sign-out must conceal, not delete, local evidence");
   assert.deepEqual(errors, []); console.log("feed-review-ui.browser.test.js: PASS");
 } finally { await context?.close(); await browser.close(); await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }

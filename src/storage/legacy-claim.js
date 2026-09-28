@@ -1,4 +1,4 @@
-import { get, claimLegacyAnimalAtomically } from "./local-db.js?build=20260927-02";
+import { get, claimLegacyAnimalAtomically } from "./local-db.js?build=20260928-01";
 import { inspectRecoveryBackup, readRecoveryEvidence } from "./recovery-preflight.js?build=20260927-02";
 import { verifyFarmAccess } from "../farm-access.js";
 
