@@ -1,7 +1,7 @@
 import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20260928-02";
-import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js";
-import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js";
-import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js";
+import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
+import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
+import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
 
 let activeFarmId = null;
 
