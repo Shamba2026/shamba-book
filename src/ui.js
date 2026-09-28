@@ -169,30 +169,30 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
 }
 
 async function handleFeedSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration;
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
   try {
     const feed = await FarmRepository.createFeed({ name: $("#feed-name").value, role: $("#feed-role").value });
     if (!canShowFarmData(generation)) return;
-    event.currentTarget.reset(); selectedFeedId = feed.id; await refreshFeedWorkspace(generation);
+    form.reset(); selectedFeedId = feed.id; await refreshFeedWorkspace(generation);
     setStatus("Feed added to this farm library.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
 async function handleFeedSourceSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration;
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
   try {
     await FarmRepository.createNutritionSource({ title: $("#feed-source-title").value,
       sourceType: $("#feed-source-type").value, citation: $("#feed-source-citation").value,
       publisher: $("#feed-source-publisher").value, publicationYear: $("#feed-source-year").value,
       url: $("#feed-source-url").value });
     if (!canShowFarmData(generation)) return;
-    event.currentTarget.reset(); await refreshFeedWorkspace(generation);
+    form.reset(); await refreshFeedWorkspace(generation);
     setStatus("Evidence source saved for review.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
 async function handleFeedObservationSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration;
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
   try {
     const feedId = $("#feed-observation-feed").value;
     await FarmRepository.createNutritionObservation(feedId, { sourceId: $("#feed-observation-source").value,
@@ -203,7 +203,7 @@ async function handleFeedObservationSubmit(event) {
       rangeMax: $("#feed-observation-max").value, sampleCount: $("#feed-observation-samples").value,
       context: $("#feed-observation-context").value });
     if (!canShowFarmData(generation)) return;
-    event.currentTarget.reset(); selectNutritionMetric(); selectedFeedId = feedId;
+    form.reset(); selectNutritionMetric(); selectedFeedId = feedId;
     await refreshFeedWorkspace(generation); setStatus("Nutrition observation saved for review only.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
