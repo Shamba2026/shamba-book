@@ -42,7 +42,7 @@ try {
   assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false); assert.equal(await page.locator("#feed-list").textContent(), "");
   await page.locator("#auth-email").fill("feed-review@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click(); await page.locator('[data-view="feeds"]:visible').waitFor();
-  assert.match(await page.locator(".feed-safety").textContent(), /not connected to ration or TMR calculations/i);
+  assert.match(await page.locator(".feed-hero .feed-safety").textContent(), /not connected to ration or TMR calculations/i);
   await page.locator("#feed-name").fill("TEST feed evidence"); await page.locator("#feed-role").selectOption("forage"); await page.locator('#feed-form button[type="submit"]').click();
   await page.waitForTimeout(300);
   assert.equal(await page.locator("#app-status").textContent(), "Feed added to this farm library.");
