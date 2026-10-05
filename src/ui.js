@@ -64,7 +64,8 @@ function clearFarmView() {
   $("#diagnostic-history-count").textContent = "0 reviews";
   $("#diagnostic-history-empty").hidden = false;
   ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source",
-    "#feed-movement-batch", "#feed-selection-observation"].forEach((selector) => $(selector).replaceChildren());
+    "#feed-movement-batch", "#feed-selection-observation", "#diagnostic-selection-profile",
+    "#diagnostic-selection-animals", "#diagnostic-archive-profile", "#diagnostic-supersedes"].forEach((selector) => $(selector).replaceChildren());
   $("#feed-count").textContent = "0 feeds";
   $("#feed-source-count").textContent = "0 sources";
   $("#feed-cost-source-count").textContent = "0 sources";
