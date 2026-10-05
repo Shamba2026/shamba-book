@@ -74,7 +74,7 @@ try {
   await page.locator('#feed-movement-form button[type="submit"]').click(); await page.locator('#feed-inventory-list:has-text("100.5 kg remaining")').waitFor();
   await page.locator("#feed-movement-batch").selectOption({ index: 1 }); await page.locator("#feed-movement-date").fill("2026-09-29");
   await page.locator("#feed-movement-quantity").fill("101"); await page.locator("#feed-movement-reason").fill("Synthetic overspend rejection");
-  await page.locator('#feed-movement-form button[type="submit"]').click(); await page.locator('#app-status:has-text("exceeds available")').waitFor();
+  await page.locator('#feed-movement-form button[type="submit"]').click(); await page.locator('#app-status:has-text("exceeds the available")').waitFor();
   assert.equal((await rows(page, "feed_library")).length, 1); assert.equal((await rows(page, "feed_sources")).length, 1); assert.equal((await rows(page, "feed_observations")).length, 2);
   assert.equal((await rows(page, "feed_cost_sources")).length, 1); assert.equal((await rows(page, "feed_inventory_batches")).length, 1);
   assert.equal((await rows(page, "feed_inventory_movements")).length, 1); assert.equal((await rows(page, "feed_nutrition_selections")).length, 1);
