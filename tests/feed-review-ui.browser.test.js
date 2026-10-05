@@ -61,6 +61,8 @@ try {
   await page.locator("#feed-selection-observation").selectOption({ index: 1 });
   await page.locator("#feed-selection-rationale").fill("Synthetic reviewed laboratory result");
   await page.locator('#feed-selection-form button[type="submit"]').click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator("#app-status").textContent(), "Nutrition evidence selection recorded for review.");
   await page.locator('#feed-current-selections:has-text("TEST-CITATION-001")').waitFor();
   for (const [index, rationale] of [[3, "Synthetic reviewed dry matter"], [4, "Synthetic reviewed energy"]]) {
     await page.locator("#feed-selection-observation").selectOption({ index });
