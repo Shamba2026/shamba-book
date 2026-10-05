@@ -4,6 +4,7 @@ import { validateCostSource, validateInventoryBatch, validateInventoryMovement }
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
 import { currentDiagnosticProfileSelection, validateDiagnosticProfile,
   validateDiagnosticProfileSelection } from "../domain/feed/diagnostic-profile.js?build=20261005-03";
+import { validateAnimalNutritionClassification } from "../domain/animal-nutrition-classification.js?build=20261006-01";
 
 let activeFarmId = null;
 
@@ -134,8 +135,39 @@ export async function listAnimals() {
 export async function getAnimal(animalId) {
   const animal = await get("animals", animalId);
   if (!animal || animal.farmId !== requireFarm()) return null;
-  const attachment = await get("attachments", animal.photoAttachmentId);
+  const attachment = animal.photoAttachmentId ? await get("attachments", animal.photoAttachmentId) : null;
   return { animal, photo: attachment?.farmId === requireFarm() ? attachment.blob : null };
+}
+
+export async function createAnimalNutritionClassification(animalId, input) {
+  const farmId = requireFarm();
+  const animal = await get("animals", animalId);
+  if (!animal || animal.farmId !== farmId || !["active", "dry"].includes(animal.status)) {
+    throw new Error("Nutritional classification requires an active animal in this farm.");
+  }
+  const validated = validateAnimalNutritionClassification(input);
+  const existing = farmRows(await getAll("animal_nutrition_classifications"))
+    .filter((row) => row.animalId === animalId).sort((a, b) => b.version - a.version);
+  const version = existing.length ? existing[0].version + 1 : 1;
+  const revisionReason = String(input?.revisionReason || "").trim();
+  if (version > 1 && (!revisionReason || revisionReason.length > 500)) {
+    throw new Error("A revision reason is required for a new classification version.");
+  }
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const row = { id: newId(), farmId, animalId, animalCode: animal.animalCode, version,
+    supersedesClassificationId: existing[0]?.id || null, revisionReason: version > 1 ? revisionReason : null,
+    ...validated, createdAt: now() };
+  await putAtomically([{ storeName: "animal_nutrition_classifications", value: row }]);
+  return row;
+}
+
+export async function listAnimalNutritionClassifications(animalId) {
+  const farmId = requireFarm();
+  const animal = await get("animals", animalId);
+  if (!animal || animal.farmId !== farmId) return [];
+  return farmRows(await getAll("animal_nutrition_classifications"))
+    .filter((row) => row.animalId === animalId)
+    .sort((a, b) => b.version - a.version || b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function saveMilkRecord(input) {

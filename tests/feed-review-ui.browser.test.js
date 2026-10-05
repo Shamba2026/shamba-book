@@ -61,7 +61,10 @@ try {
     await page.locator('#feed-profile .observation:has-text("' + value + ' ' + (nutrient === "ME" ? "MJ PER KG DM" : "PERCENT") + '")').waitFor();
   }
   await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
-  await page.locator("#feed-selection-observation").selectOption({ index: 1 });
+  const proteinObservationId = await page.locator("#feed-selection-observation").evaluate((select) =>
+    [...select.options].find((option) => option.textContent.startsWith("Crude protein · 80 "))?.value || "");
+  assert.notEqual(proteinObservationId, "", "reviewed crude-protein observation must be selectable");
+  await page.locator("#feed-selection-observation").selectOption(proteinObservationId);
   await page.locator("#feed-selection-rationale").fill("Synthetic reviewed laboratory result");
   await page.locator('#feed-selection-form button[type="submit"]').click();
   await page.waitForTimeout(300);
@@ -131,6 +134,22 @@ try {
   await page.locator('#diagnostic-current-selection:has-text("Synthetic explicit review decision")').waitFor();
   await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
+  await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
+  await page.locator("#animal-profile:visible").waitFor();
+  await page.locator("#classification-date").fill("2026-10-05"); await page.locator("#classification-weight").fill("480");
+  await page.locator("#classification-weight-method").selectOption("SCALE_MEASURED"); await page.locator("#classification-physiology").selectOption("POSTPARTUM");
+  await page.locator("#classification-lactation-status").selectOption("LACTATING"); await page.locator("#classification-lactation-stage").selectOption("EARLY");
+  await page.locator("#classification-production-context").selectOption("DAIRY"); await page.locator("#classification-milk").fill("20");
+  await page.locator("#classification-window").fill("7"); await page.locator("#classification-evidence-type").selectOption("FARM_RECORD");
+  await page.locator("#classification-source-title").fill("Synthetic animal evidence"); await page.locator("#classification-citation").fill("TEST-CLASS-UI-001");
+  await page.locator("#classification-notes").fill("Synthetic UI evidence only; no automatic applicability or recommendation.");
+  await page.locator('#animal-nutrition-classification-form button[type="submit"]').click();
+  await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
+  assert.equal((await rows(page, "animal_nutrition_classifications")).length, 1);
+  assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
+  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav="animals"]').click();
+  await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
+  await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor(); await page.waitForTimeout(100);
   assert.equal(await page.locator("#feed-list").textContent(), ""); assert.equal(await page.locator("#feed-source-list").textContent(), ""); assert.equal(await page.locator("#feed-profile").textContent(), "");
   assert.equal(await page.locator("#feed-cost-source-list").textContent(), ""); assert.equal(await page.locator("#feed-inventory-list").textContent(), "");
@@ -139,6 +158,7 @@ try {
   assert.equal(await page.locator("#diagnostic-profile-list").textContent(), "");
   assert.equal(await page.locator("#diagnostic-current-selection").textContent(), "");
   assert.equal(await page.locator("#diagnostic-history-list").textContent(), "");
+  assert.equal(await page.locator("#classification-list").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);

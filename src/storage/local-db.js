@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -134,6 +134,15 @@ export function openLocalDatabase() {
         store.createIndex("farmId", "farmId", { unique: false });
         store.createIndex("profileId", "profileId", { unique: false });
         store.createIndex("calculatedAt", "calculatedAt", { unique: false });
+      }
+      // Version 8 stores immutable, sourced animal classification observations.
+      // It does not infer classes or activate diagnostic or ration logic.
+      if (!db.objectStoreNames.contains("animal_nutrition_classifications")) {
+        const store = db.createObjectStore("animal_nutrition_classifications", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("animalId", "animalId", { unique: false });
+        store.createIndex("animalVersion", ["animalId", "version"], { unique: true });
+        store.createIndex("observedAt", "observedAt", { unique: false });
       }
     };
 
