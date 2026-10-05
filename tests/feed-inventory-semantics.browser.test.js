@@ -19,14 +19,14 @@ try {
   const page = await context.newPage(); await page.goto(`http://127.0.0.1:${server.address().port}/src/config.js`);
   const result = await page.evaluate(async () => {
     const dbName = "ngombe-herdbook";
-    const v4Stores = ["animals", "attachments", "records", "sync_queue", "settings", "feed_library", "feed_sources",
-      "feed_observations", "feed_cost_sources", "feed_inventory_batches"];
+    const v5Stores = ["animals", "attachments", "records", "sync_queue", "settings", "feed_library", "feed_sources",
+      "feed_observations", "feed_cost_sources", "feed_inventory_batches", "feed_inventory_movements", "feed_nutrition_selections"];
     const request = (item) => new Promise((resolve, reject) => { item.onsuccess = () => resolve(item.result); item.onerror = () => reject(item.error); });
     const complete = (tx) => new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error || new Error("aborted")); });
     const remove = () => request(indexedDB.deleteDatabase(dbName));
-    const seedV4 = async () => { const open = indexedDB.open(dbName, 4);
-      open.onupgradeneeded = () => v4Stores.forEach((store) => open.result.createObjectStore(store, { keyPath: store === "settings" ? "key" : "id" }));
-      const db = await request(open); const tx = db.transaction(v4Stores, "readwrite");
+    const seedV5 = async () => { const open = indexedDB.open(dbName, 5);
+      open.onupgradeneeded = () => v5Stores.forEach((store) => open.result.createObjectStore(store, { keyPath: store === "settings" ? "key" : "id" }));
+      const db = await request(open); const tx = db.transaction(v5Stores, "readwrite");
       tx.objectStore("animals").put({ id: "preserved-animal", farmId: "farm-a", animalCode: "PRESERVED" });
       tx.objectStore("attachments").put({ id: "preserved-photo", farmId: "farm-a", blob: new Blob(["PRESERVED-PHOTO"]) });
       tx.objectStore("feed_inventory_batches").put({ id: "preserved-batch", farmId: "farm-a", receivedQuantityKg: 4 });
@@ -36,11 +36,11 @@ try {
       const photos = await request(db.transaction("attachments").objectStore("attachments").getAll());
       const result = { version: db.version, stores: [...db.objectStoreNames], animal: animals[0], photo: await photos[0].blob.text() }; db.close(); return result; };
 
-    await remove(); await seedV4(); const localDb = await import("/src/storage/local-db.js?semantics-upgrade");
+    await remove(); await seedV5(); const localDb = await import("/src/storage/local-db.js?semantics-upgrade");
     const upgradedDb = await localDb.openLocalDatabase(); const upgraded = { version: upgradedDb.version, stores: [...upgradedDb.objectStoreNames] }; upgradedDb.close();
     const preserved = await inspect();
-    await remove(); await seedV4(); const originalCreate = IDBDatabase.prototype.createObjectStore;
-    IDBDatabase.prototype.createObjectStore = function (name, ...args) { if (name === "feed_nutrition_selections")
+    await remove(); await seedV5(); const originalCreate = IDBDatabase.prototype.createObjectStore;
+    IDBDatabase.prototype.createObjectStore = function (name, ...args) { if (name === "feed_diagnostic_profile_selections")
       throw new DOMException("Synthetic selection upgrade failure", "AbortError"); return originalCreate.call(this, name, ...args); };
     let upgradeRejected = false; try { await localDb.openLocalDatabase(); } catch { upgradeRejected = true; }
     finally { IDBDatabase.prototype.createObjectStore = originalCreate; }
@@ -65,8 +65,18 @@ try {
     await repository.selectNutritionObservation(feed.id, { observationId: observationA.id, rationale: "Initial reviewed result" });
     await repository.selectNutritionObservation(feed.id, { observationId: observationB.id, rationale: "Newer reviewed result" });
     const selections = await repository.getNutritionSelections(feed.id);
+    const profile = await repository.createDiagnosticProfile({ name: "Synthetic lactating profile", version: 1,
+      animalClass: "LACTATING_DAIRY_COW", applicability: "Synthetic browser test only", sourceTitle: "Synthetic source",
+      sourceCitation: "TEST-DIAGNOSTIC-001", sourceUrl: "", publicationYear: 2021,
+      minimumForageDMFraction: 0.4, minimumMEDensityMJPerKgDM: 10, minimumCPPercentDM: 13 });
+    const noAutomaticDiagnostic = await repository.getSelectedDiagnosticProfile();
+    await repository.selectDiagnosticProfile(profile.id, { rationale: "Synthetic reviewed applicability" });
+    const selectedDiagnostic = await repository.getSelectedDiagnosticProfile();
     repository.setActiveFarm("farm-b"); const hiddenInventory = (await repository.listFeedInventoryBatches()).length === 0;
     const hiddenSelections = await repository.getNutritionSelections(feed.id) === null;
+    const hiddenDiagnostic = await repository.getSelectedDiagnosticProfile() === null;
+    let crossFarmDiagnosticRejected = false;
+    try { await repository.selectDiagnosticProfile(profile.id, { rationale: "Cross farm" }); } catch { crossFarmDiagnosticRejected = true; }
     let crossFarmSelectionRejected = false;
     try { await repository.selectNutritionObservation(feed.id, { observationId: observationB.id, rationale: "Cross farm" }); }
     catch { crossFarmSelectionRejected = true; }
@@ -77,17 +87,22 @@ try {
     const records = await localDb.getAll("records"); const queue = await localDb.getAll("sync_queue");
     const selectionEvents = await localDb.getAll("feed_nutrition_selections");
     return { upgraded, preserved, upgradeRejected, rolledBack, batch, concurrent: concurrent.map((x) => x.status), inventory,
-      noAutomaticSelection, selections, hiddenInventory, hiddenSelections, crossFarmSelectionRejected,
+      noAutomaticSelection, selections, noAutomaticDiagnostic, selectedDiagnostic, hiddenInventory, hiddenSelections,
+      hiddenDiagnostic, crossFarmDiagnosticRejected, crossFarmSelectionRejected,
       archivedSelectionRejected, records, queue, selectionEvents };
   });
-  assert.equal(result.upgraded.version, 5); assert.equal(result.upgraded.stores.includes("feed_inventory_movements"), true);
+  assert.equal(result.upgraded.version, 6); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
+  assert.equal(result.upgraded.stores.includes("feed_diagnostic_profile_selections"), true);
   assert.equal(result.upgraded.stores.includes("feed_nutrition_selections"), true); assert.equal(result.preserved.photo, "PRESERVED-PHOTO");
   assert.equal(result.preserved.animal.animalCode, "PRESERVED"); assert.equal(result.upgradeRejected, true);
-  assert.equal(result.rolledBack.version, 4); assert.equal(result.rolledBack.stores.includes("feed_inventory_movements"), false);
-  assert.equal(result.rolledBack.stores.includes("feed_nutrition_selections"), false); assert.equal(result.rolledBack.photo, "PRESERVED-PHOTO");
+  assert.equal(result.rolledBack.version, 5); assert.equal(result.rolledBack.stores.includes("feed_diagnostic_profiles"), false);
+  assert.equal(result.rolledBack.stores.includes("feed_diagnostic_profile_selections"), false); assert.equal(result.rolledBack.photo, "PRESERVED-PHOTO");
   assert.equal(result.batch.receivedQuantityKg, 10); assert.deepEqual(result.concurrent.sort(), ["fulfilled", "rejected"]);
   assert.equal(result.inventory[0].remainingQuantityKg, 2.5); assert.deepEqual(result.noAutomaticSelection, {});
   assert.equal(result.selections.CP.observation.value, 16); assert.equal(result.selections.CP.source.citation, "TEST-LAB");
+  assert.equal(result.noAutomaticDiagnostic, null); assert.equal(result.selectedDiagnostic.profile.version, 1);
+  assert.equal(result.selectedDiagnostic.selection.rationale, "Synthetic reviewed applicability");
+  assert.equal(result.hiddenDiagnostic, true); assert.equal(result.crossFarmDiagnosticRejected, true);
   assert.equal(result.selectionEvents.length, 2, "selection history must be retained"); assert.equal(result.hiddenInventory, true);
   assert.equal(result.hiddenSelections, true); assert.equal(result.crossFarmSelectionRejected, true);
   assert.equal(result.archivedSelectionRejected, true); assert.equal(result.records.length, 0); assert.equal(result.queue.length, 0);
