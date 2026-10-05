@@ -55,7 +55,8 @@ try {
     await page.locator("#feed-observation-source").selectOption({ index: 1 });
     await page.locator("#feed-observation-nutrient").selectOption(nutrient); await page.locator("#feed-observation-value").fill(value);
     await page.locator("#feed-observation-evidence").selectOption(evidence); await page.locator("#feed-observation-date").fill("2026-09-28");
-    await page.locator('#feed-observation-form button[type="submit"]').click(); await page.locator('#app-status:has-text("Nutrition observation saved")').waitFor();
+    await page.locator('#feed-observation-form button[type="submit"]').click();
+    await page.locator('#feed-profile .observation:has-text("' + value + ' ' + (nutrient === "ME" ? "MJ PER KG DM" : "PERCENT") + '")').waitFor();
   }
   await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
   await page.locator("#feed-selection-observation").selectOption({ index: 1 });
