@@ -65,18 +65,21 @@ try {
     await repository.selectNutritionObservation(feed.id, { observationId: observationA.id, rationale: "Initial reviewed result" });
     await repository.selectNutritionObservation(feed.id, { observationId: observationB.id, rationale: "Newer reviewed result" });
     const selections = await repository.getNutritionSelections(feed.id);
+    await localDb.put("animals", { id: "diagnostic-animal", farmId: "farm-a", animalCode: "TEST-DIAGNOSTIC-ANIMAL", type: "dairy_cow", status: "active" });
     const profile = await repository.createDiagnosticProfile({ name: "Synthetic lactating profile", version: 1,
       animalClass: "LACTATING_DAIRY_COW", applicability: "Synthetic browser test only", sourceTitle: "Synthetic source",
       sourceCitation: "TEST-DIAGNOSTIC-001", sourceUrl: "", publicationYear: 2021,
       minimumForageDMFraction: 0.4, minimumMEDensityMJPerKgDM: 10, minimumCPPercentDM: 13 });
     const noAutomaticDiagnostic = await repository.getSelectedDiagnosticProfile();
-    await repository.selectDiagnosticProfile(profile.id, { rationale: "Synthetic reviewed applicability" });
+    await repository.selectDiagnosticProfile(profile.id, { rationale: "Synthetic reviewed applicability",
+      animalIds: ["diagnostic-animal"], applicabilityConfirmed: true });
     const selectedDiagnostic = await repository.getSelectedDiagnosticProfile();
     repository.setActiveFarm("farm-b"); const hiddenInventory = (await repository.listFeedInventoryBatches()).length === 0;
     const hiddenSelections = await repository.getNutritionSelections(feed.id) === null;
     const hiddenDiagnostic = await repository.getSelectedDiagnosticProfile() === null;
     let crossFarmDiagnosticRejected = false;
-    try { await repository.selectDiagnosticProfile(profile.id, { rationale: "Cross farm" }); } catch { crossFarmDiagnosticRejected = true; }
+    try { await repository.selectDiagnosticProfile(profile.id, { rationale: "Cross farm", animalIds: ["diagnostic-animal"],
+      applicabilityConfirmed: true }); } catch { crossFarmDiagnosticRejected = true; }
     let crossFarmSelectionRejected = false;
     try { await repository.selectNutritionObservation(feed.id, { observationId: observationB.id, rationale: "Cross farm" }); }
     catch { crossFarmSelectionRejected = true; }
@@ -84,14 +87,39 @@ try {
     let archivedSelectionRejected = false;
     try { await repository.selectNutritionObservation(feed.id, { observationId: observationB.id, rationale: "Archived" }); }
     catch { archivedSelectionRejected = true; }
+    const revision = { name: "Synthetic lactating profile", version: 2,
+      animalClass: "LACTATING_DAIRY_COW", applicability: "Synthetic browser test only, revision two", sourceTitle: "Synthetic source",
+      sourceCitation: "TEST-DIAGNOSTIC-002", sourceUrl: "", publicationYear: 2022,
+      minimumForageDMFraction: 0.45, minimumMEDensityMJPerKgDM: 10.5, minimumCPPercentDM: 14,
+      supersessionReason: "New reviewed synthetic evidence" };
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, ...args) { if (value?.supersedesProfileId)
+      throw new DOMException("Synthetic supersession failure", "AbortError"); return originalPut.call(this, value, ...args); };
+    let supersessionRollbackRejected = false;
+    try { await repository.supersedeDiagnosticProfile(profile.id, revision); } catch { supersessionRollbackRejected = true; }
+    finally { IDBObjectStore.prototype.put = originalPut; }
+    const afterFailedSupersession = await repository.listDiagnosticProfiles({ includeArchived: true });
+    const profileV2 = await repository.supersedeDiagnosticProfile(profile.id, revision);
+    const oldSelectionDeactivated = await repository.getSelectedDiagnosticProfile() === null;
+    await repository.selectDiagnosticProfile(profileV2.id, { rationale: "Revision two approved", animalIds: ["diagnostic-animal"],
+      applicabilityConfirmed: true });
+    await repository.recordDiagnosticWarningReview({ totalAsFedKg: 10, totalDMIKg: 4, forageDMKg: 1,
+      meDensityMJPerKgDM: 9, cpPercentDM: 12, totalCostCents: 100 }, [{ code: "LOW_ME_DENSITY" }]);
+    await repository.archiveDiagnosticProfile(profileV2.id, "Synthetic retirement");
+    const archivedSelectionDeactivated = await repository.getSelectedDiagnosticProfile() === null;
+    const profileHistory = await repository.listDiagnosticProfiles({ includeArchived: true });
+    const warningHistory = await repository.listDiagnosticWarningHistory();
     const records = await localDb.getAll("records"); const queue = await localDb.getAll("sync_queue");
     const selectionEvents = await localDb.getAll("feed_nutrition_selections");
     return { upgraded, preserved, upgradeRejected, rolledBack, batch, concurrent: concurrent.map((x) => x.status), inventory,
       noAutomaticSelection, selections, noAutomaticDiagnostic, selectedDiagnostic, hiddenInventory, hiddenSelections,
       hiddenDiagnostic, crossFarmDiagnosticRejected, crossFarmSelectionRejected,
-      archivedSelectionRejected, records, queue, selectionEvents };
+      archivedSelectionRejected, supersessionRollbackRejected, afterFailedSupersession, oldSelectionDeactivated,
+      archivedSelectionDeactivated, profileHistory, warningHistory,
+      records, queue, selectionEvents };
   });
-  assert.equal(result.upgraded.version, 6); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
+  assert.equal(result.upgraded.version, 7); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
+  assert.equal(result.upgraded.stores.includes("feed_diagnostic_warning_events"), true);
   assert.equal(result.upgraded.stores.includes("feed_diagnostic_profile_selections"), true);
   assert.equal(result.upgraded.stores.includes("feed_nutrition_selections"), true); assert.equal(result.preserved.photo, "PRESERVED-PHOTO");
   assert.equal(result.preserved.animal.animalCode, "PRESERVED"); assert.equal(result.upgradeRejected, true);
@@ -103,6 +131,11 @@ try {
   assert.equal(result.noAutomaticDiagnostic, null); assert.equal(result.selectedDiagnostic.profile.version, 1);
   assert.equal(result.selectedDiagnostic.selection.rationale, "Synthetic reviewed applicability");
   assert.equal(result.hiddenDiagnostic, true); assert.equal(result.crossFarmDiagnosticRejected, true);
+  assert.equal(result.supersessionRollbackRejected, true); assert.equal(result.afterFailedSupersession.length, 1);
+  assert.equal(result.afterFailedSupersession[0].status, "active");
+  assert.equal(result.oldSelectionDeactivated, true); assert.equal(result.archivedSelectionDeactivated, true);
+  assert.equal(result.profileHistory.length, 2); assert.equal(result.profileHistory.every((row) => row.status === "archived"), true);
+  assert.equal(result.warningHistory.length, 1); assert.deepEqual(result.warningHistory[0].findingCodes, ["LOW_ME_DENSITY"]);
   assert.equal(result.selectionEvents.length, 2, "selection history must be retained"); assert.equal(result.hiddenInventory, true);
   assert.equal(result.hiddenSelections, true); assert.equal(result.crossFarmSelectionRejected, true);
   assert.equal(result.archivedSelectionRejected, true); assert.equal(result.records.length, 0); assert.equal(result.queue.length, 0);

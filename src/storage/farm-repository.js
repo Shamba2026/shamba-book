@@ -1,4 +1,4 @@
-import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261005-03";
+import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261005-04";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
@@ -433,6 +433,40 @@ export async function createDiagnosticProfile(input) {
   return profile;
 }
 
+export async function supersedeDiagnosticProfile(previousProfileId, input) {
+  const farmId = requireFarm();
+  const previous = await get("feed_diagnostic_profiles", previousProfileId);
+  if (!previous || previous.farmId !== farmId || previous.status === "archived") throw new Error("Previous diagnostic profile is not active in this farm.");
+  const validated = validateDiagnosticProfile(input);
+  const duplicate = farmRows(await getAll("feed_diagnostic_profiles")).find((row) => row.status !== "archived" &&
+    row.name.toLocaleLowerCase() === validated.name.toLocaleLowerCase() && row.version === validated.version);
+  if (duplicate) throw new Error("That diagnostic profile name and version already exist in this farm.");
+  if (validated.version <= previous.version) throw new Error("A superseding profile must have a higher version.");
+  if (validated.animalClass !== previous.animalClass) throw new Error("A superseding profile must retain the same animal class.");
+  const reason = String(input?.supersessionReason || "").trim();
+  if (!reason || reason.length > 500) throw new Error("Supersession reason is required and must be at most 500 characters.");
+  const timestamp = now();
+  const profile = { id: newId(), farmId, ...validated, status: "active", supersedesProfileId: previous.id,
+    supersessionReason: reason, createdAt: timestamp, updatedAt: timestamp };
+  const archived = { ...previous, status: "archived", archivedAt: timestamp, archiveReason: reason,
+    supersededByProfileId: profile.id, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_diagnostic_profiles", value: archived },
+    { storeName: "feed_diagnostic_profiles", value: profile }]);
+  return profile;
+}
+
+export async function archiveDiagnosticProfile(profileId, reasonInput) {
+  const farmId = requireFarm();
+  const profile = await get("feed_diagnostic_profiles", profileId);
+  if (!profile || profile.farmId !== farmId || profile.status === "archived") throw new Error("Diagnostic profile is not active in this farm.");
+  const reason = String(reasonInput || "").trim();
+  if (!reason || reason.length > 500) throw new Error("Archive reason is required and must be at most 500 characters.");
+  const timestamp = now();
+  const archived = { ...profile, status: "archived", archivedAt: timestamp, archiveReason: reason, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_diagnostic_profiles", value: archived }]);
+  return archived;
+}
+
 export async function listDiagnosticProfiles({ includeArchived = false } = {}) {
   return farmRows(await getAll("feed_diagnostic_profiles"))
     .filter((row) => includeArchived || row.status !== "archived")
@@ -444,8 +478,14 @@ export async function selectDiagnosticProfile(profileId, input) {
   const validated = validateDiagnosticProfileSelection({ ...input, profileId });
   const profile = await get("feed_diagnostic_profiles", validated.profileId);
   if (!profile || profile.farmId !== farmId || profile.status === "archived") throw new Error("Diagnostic profile is not active in this farm.");
+  const animals = await getAll("animals");
+  const group = validated.animalIds.map((id) => animals.find((animal) => animal.id === id && animal.farmId === farmId &&
+    ["active", "dry"].includes(animal.status)));
+  if (group.some((animal) => !animal)) throw new Error("Every selected animal must be active in this farm.");
   if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
-  const selection = { id: newId(), farmId, ...validated, selectedAt: now() };
+  const selection = { id: newId(), farmId, profileId: validated.profileId, rationale: validated.rationale,
+    applicabilityConfirmed: true, applicabilityConfirmedAt: now(), animalGroup: group.map((animal) =>
+      ({ id: animal.id, animalCode: animal.animalCode, type: animal.type, status: animal.status })), selectedAt: now() };
   await putAtomically([{ storeName: "feed_diagnostic_profile_selections", value: selection }]);
   return selection;
 }
@@ -455,9 +495,32 @@ export async function getSelectedDiagnosticProfile() {
   const [profiles, events] = await Promise.all([getAll("feed_diagnostic_profiles"), getAll("feed_diagnostic_profile_selections")]);
   if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
   const selection = currentDiagnosticProfileSelection(events.filter((row) => row.farmId === farmId));
-  if (!selection) return null;
+  if (!selection || selection.applicabilityConfirmed !== true || !selection.animalGroup?.length) return null;
   const profile = profiles.find((row) => row.id === selection.profileId && row.farmId === farmId && row.status !== "archived");
   return profile ? Object.freeze({ profile, selection }) : null;
+}
+
+export async function recordDiagnosticWarningReview(ration, findings) {
+  const farmId = requireFarm();
+  const selected = await getSelectedDiagnosticProfile();
+  if (!selected) throw new Error("Approve a diagnostic profile for a confirmed animal group before recording warnings.");
+  const metrics = ["totalAsFedKg", "totalDMIKg", "forageDMKg", "meDensityMJPerKgDM", "cpPercentDM", "totalCostCents"];
+  if (metrics.some((key) => !Number.isFinite(Number(ration?.[key])))) throw new Error("Diagnostic warning history received invalid ration metrics.");
+  const codes = Array.isArray(findings) ? findings.map((finding) => String(finding?.code || "")).filter(Boolean) : [];
+  if (!codes.length) throw new Error("Diagnostic warning history requires at least one finding.");
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const event = { id: newId(), farmId, profileId: selected.profile.id, profileVersion: selected.profile.version,
+    profileName: selected.profile.name, animalClass: selected.profile.animalClass, applicability: selected.profile.applicability,
+    sourceCitation: selected.profile.sourceCitation, selectionId: selected.selection.id,
+    animalGroup: structuredClone(selected.selection.animalGroup), rationale: selected.selection.rationale,
+    ration: Object.fromEntries(metrics.map((key) => [key, Number(ration[key])])), findingCodes: codes, calculatedAt: now() };
+  await putAtomically([{ storeName: "feed_diagnostic_warning_events", value: event }]);
+  return event;
+}
+
+export async function listDiagnosticWarningHistory() {
+  return farmRows(await getAll("feed_diagnostic_warning_events"))
+    .sort((a, b) => b.calculatedAt.localeCompare(a.calculatedAt));
 }
 
 export async function getPendingSyncCount() {

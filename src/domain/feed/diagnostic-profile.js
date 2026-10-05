@@ -40,8 +40,12 @@ export function validateDiagnosticProfile(input) {
 }
 
 export function validateDiagnosticProfileSelection(input) {
-  return { profileId: text(input?.profileId, "Diagnostic profile", 100),
-    rationale: text(input?.rationale, "Selection rationale", 500) };
+  const profileId = text(input?.profileId, "Diagnostic profile", 100);
+  const rationale = text(input?.rationale, "Selection rationale", 500);
+  const animalIds = [...new Set(Array.isArray(input?.animalIds) ? input.animalIds.map((id) => String(id).trim()).filter(Boolean) : [])];
+  if (!animalIds.length) throw new Error("Select at least one animal for the applicability group.");
+  if (input?.applicabilityConfirmed !== true) throw new Error("Confirm that the profile applicability was reviewed against the selected animal group.");
+  return { profileId, rationale, animalIds, applicabilityConfirmed: true };
 }
 
 export function currentDiagnosticProfileSelection(events) {

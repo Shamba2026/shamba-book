@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -126,6 +126,14 @@ export function openLocalDatabase() {
         store.createIndex("farmId", "farmId", { unique: false });
         store.createIndex("profileId", "profileId", { unique: false });
         store.createIndex("selectedAt", "selectedAt", { unique: false });
+      }
+      // Version 7 adds immutable warning-review history. No inventory, farm
+      // record, queue or cloud row is created by this local audit store.
+      if (!db.objectStoreNames.contains("feed_diagnostic_warning_events")) {
+        const store = db.createObjectStore("feed_diagnostic_warning_events", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("profileId", "profileId", { unique: false });
+        store.createIndex("calculatedAt", "calculatedAt", { unique: false });
       }
     };
 

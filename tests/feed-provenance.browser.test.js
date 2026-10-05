@@ -134,7 +134,7 @@ try {
       activeAfterArchive, allAfterArchive };
   });
 
-  assert.equal(result.upgraded.version, 6);
+  assert.equal(result.upgraded.version, 7);
   assert.equal(result.upgraded.stores.includes("feed_sources"), true);
   assert.equal(result.upgraded.stores.includes("feed_observations"), true);
   assert.equal(result.preserved.rows.attachments[0].blobText, "PHOTO-BYTES");

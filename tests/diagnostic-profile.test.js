@@ -18,9 +18,14 @@ for (const missing of ["animalClass", "applicability", "sourceTitle", "sourceCit
 }
 assert.throws(() => validateDiagnosticProfile({ ...valid, animalClass: "ALL_ANIMALS" }), /animal class/i);
 assert.throws(() => validateDiagnosticProfile({ ...valid, sourceUrl: "http://example.invalid" }), /HTTPS/i);
-assert.deepEqual(validateDiagnosticProfileSelection({ profileId: "profile-1", rationale: "Reviewed for this herd class" }),
-  { profileId: "profile-1", rationale: "Reviewed for this herd class" });
-assert.throws(() => validateDiagnosticProfileSelection({ profileId: "profile-1" }), /rationale/i);
+assert.deepEqual(validateDiagnosticProfileSelection({ profileId: "profile-1", rationale: "Reviewed for this herd class",
+  animalIds: ["animal-1", "animal-1", "animal-2"], applicabilityConfirmed: true }),
+  { profileId: "profile-1", rationale: "Reviewed for this herd class", animalIds: ["animal-1", "animal-2"], applicabilityConfirmed: true });
+assert.throws(() => validateDiagnosticProfileSelection({ profileId: "profile-1", animalIds: ["a"], applicabilityConfirmed: true }), /rationale/i);
+assert.throws(() => validateDiagnosticProfileSelection({ profileId: "profile-1", rationale: "Reviewed", animalIds: [],
+  applicabilityConfirmed: true }), /applicability group/i);
+assert.throws(() => validateDiagnosticProfileSelection({ profileId: "profile-1", rationale: "Reviewed", animalIds: ["a"] }),
+  /confirm/i);
 
 const selected = currentDiagnosticProfileSelection([
   { id: "a", profileId: "profile-1", selectedAt: "2026-01-01T00:00:00.000Z" },

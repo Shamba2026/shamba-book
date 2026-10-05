@@ -2,7 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261005-03";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261005-04";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
@@ -21,7 +21,7 @@ function clearFarmView() {
   ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
     "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
     "#feed-movement-form", "#feed-selection-form", "#ration-review-form", "#diagnostic-profile-form",
-    "#diagnostic-selection-form"].forEach((selector) => {
+    "#diagnostic-selection-form", "#diagnostic-archive-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -55,11 +55,14 @@ function clearFarmView() {
   selectedFeedId = null;
   ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list",
     "#feed-movement-list", "#feed-current-selections", "#ration-review-rows", "#ration-review-result",
-    "#diagnostic-profile-list", "#diagnostic-current-selection"].forEach((selector) => $(selector).replaceChildren());
+    "#diagnostic-profile-list", "#diagnostic-current-selection", "#diagnostic-history-list"].forEach((selector) => $(selector).replaceChildren());
   selectedDiagnosticProfile = null;
   $("#diagnostic-profile-count").textContent = "0 profiles";
   $("#diagnostic-profile-empty").hidden = false;
   $("#diagnostic-selection-form").hidden = true;
+  $("#diagnostic-archive-form").hidden = true;
+  $("#diagnostic-history-count").textContent = "0 reviews";
+  $("#diagnostic-history-empty").hidden = false;
   ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source",
     "#feed-movement-batch", "#feed-selection-observation"].forEach((selector) => $(selector).replaceChildren());
   $("#feed-count").textContent = "0 feeds";
@@ -180,8 +183,9 @@ function renderRationReview(batches, selectionsByFeed) {
   $("#ration-review-result").replaceChildren();
 }
 
-function handleRationReview(event) {
+async function handleRationReview(event) {
   event.preventDefault();
+  const generation = accessGeneration;
   try {
     const quantities = new Map([...document.querySelectorAll("[data-ration-batch-id]")]
       .map((input) => [input.dataset.rationBatchId, Number(input.value || 0)]));
@@ -191,6 +195,8 @@ function handleRationReview(event) {
     const ration = buildReadOnlyRation(rows);
     const forageShare = ration.forageDMKg / ration.totalDMIKg * 100;
     const diagnostic = selectedDiagnosticProfile ? evaluateRation(ration, selectedDiagnosticProfile.profile) : null;
+    if (diagnostic) await FarmRepository.recordDiagnosticWarningReview(ration, diagnostic);
+    if (!canShowFarmData(generation)) return;
     const messages = { LOW_FORAGE_DM_SHARE: "Below the selected profile’s minimum forage dry-matter share.",
       LOW_ME_DENSITY: "Below the selected profile’s minimum ME density.",
       LOW_CP_PERCENT_DM: "Below the selected profile’s minimum crude-protein concentration.",
@@ -207,37 +213,60 @@ function handleRationReview(event) {
       escapeHtml(ration.cpPercentDM.toFixed(2)) + '% DM</strong></div><div><small>Forage DM share</small><strong>' +
       escapeHtml(forageShare.toFixed(1)) + '%</strong></div><div><small>Estimated cost</small><strong>' +
       escapeHtml(formatBatchMoney(ration.totalCostCents, ration.currencyCode)) + '</strong></div></div>' + diagnosticHtml + '<p class="muted">Calculation only. No ration save or inventory movement was created.</p>';
+    if (diagnostic) renderDiagnosticHistory(await FarmRepository.listDiagnosticWarningHistory());
     setStatus("Read-only ration calculation completed.", "success");
   } catch (error) { setStatus(error.message || String(error), "error"); $("#ration-review-result").replaceChildren(); }
 }
 
-function renderDiagnosticProfiles(profiles, selected) {
+function renderDiagnosticHistory(history) {
+  $("#diagnostic-history-count").textContent = history.length + (history.length === 1 ? " review" : " reviews");
+  $("#diagnostic-history-empty").hidden = history.length > 0;
+  $("#diagnostic-history-list").innerHTML = history.map((row) => '<div class="evidence-row"><strong>' +
+    escapeHtml(row.profileName + " v" + row.profileVersion) + '</strong><small>' + escapeHtml(row.calculatedAt) +
+    ' · ' + escapeHtml(row.animalClass.replaceAll("_", " ")) + '</small><small>Group: ' +
+    escapeHtml(row.animalGroup.map((animal) => animal.animalCode).join(", ")) + '</small><small>Findings: ' +
+    escapeHtml(row.findingCodes.join(", ")) + '</small><small>Citation: ' + escapeHtml(row.sourceCitation) + '</small></div>').join("");
+}
+
+function renderDiagnosticProfiles(profiles, selected, animals, history) {
   selectedDiagnosticProfile = selected;
   $("#diagnostic-profile-count").textContent = profiles.length + (profiles.length === 1 ? " profile" : " profiles");
   $("#diagnostic-profile-empty").hidden = profiles.length > 0;
   $("#diagnostic-profile-list").innerHTML = profiles.map((profile) => '<div class="evidence-row"><strong>' +
     escapeHtml(profile.name + " v" + profile.version) + '</strong><small>' + escapeHtml(profile.animalClass.replaceAll("_", " ")) +
+    '</small><small>Status: ' + escapeHtml(profile.status) + (profile.supersedesProfileId ? " · superseding version" : "") +
     '</small><small>' + escapeHtml(profile.applicability) + '</small><small>' + escapeHtml(profile.sourceTitle + " — " + profile.sourceCitation) +
     '</small><small>Thresholds: forage ' + escapeHtml(profile.minimumForageDMFraction) + ', ME ' +
     escapeHtml(profile.minimumMEDensityMJPerKgDM) + ', CP ' + escapeHtml(profile.minimumCPPercentDM) + '%</small></div>').join("");
-  $("#diagnostic-selection-form").hidden = profiles.length === 0;
-  $("#diagnostic-selection-profile").replaceChildren(new Option("Choose a profile", ""), ...profiles.map((profile) =>
+  const activeProfiles = profiles.filter((profile) => profile.status !== "archived");
+  $("#diagnostic-selection-form").hidden = activeProfiles.length === 0 || animals.length === 0;
+  $("#diagnostic-archive-form").hidden = activeProfiles.length === 0;
+  $("#diagnostic-selection-profile").replaceChildren(new Option("Choose a profile", ""), ...activeProfiles.map((profile) =>
     new Option(profile.name + " v" + profile.version + " · " + profile.animalClass.replaceAll("_", " "), profile.id)));
+  $("#diagnostic-selection-animals").replaceChildren(...animals.map((animal) => new Option(animal.animalCode + " · " + animal.type.replaceAll("_", " "), animal.id)));
+  $("#diagnostic-archive-profile").replaceChildren(new Option("Choose a profile", ""), ...activeProfiles.map((profile) =>
+    new Option(profile.name + " v" + profile.version, profile.id)));
+  $("#diagnostic-supersedes").replaceChildren(new Option("New profile", ""), ...activeProfiles.map((profile) =>
+    new Option(profile.name + " v" + profile.version, profile.id)));
   $("#diagnostic-current-selection").innerHTML = selected ? '<div class="evidence-row selection-current"><strong>Active for warnings: ' +
     escapeHtml(selected.profile.name + " v" + selected.profile.version) + '</strong><small>' + escapeHtml(selected.profile.animalClass.replaceAll("_", " ")) +
     '</small><small>' + escapeHtml(selected.profile.applicability) + '</small><small>Rationale: ' + escapeHtml(selected.selection.rationale) + '</small></div>' :
-    '<p class="muted">No profile selected. Nutritional warnings are inactive.</p>';
+    '<p class="muted">No profile approved for a confirmed animal group. Nutritional warnings are inactive.</p>';
+  renderDiagnosticHistory(history);
 }
 
 async function handleDiagnosticProfileSubmit(event) {
   event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
   try {
-    await FarmRepository.createDiagnosticProfile({ name: $("#diagnostic-name").value, version: $("#diagnostic-version").value,
+    const input = { name: $("#diagnostic-name").value, version: $("#diagnostic-version").value,
       animalClass: $("#diagnostic-animal-class").value, applicability: $("#diagnostic-applicability").value,
       sourceTitle: $("#diagnostic-source-title").value, sourceCitation: $("#diagnostic-citation").value,
       sourceUrl: $("#diagnostic-url").value, publicationYear: $("#diagnostic-year").value,
-      minimumForageDMFraction: $("#diagnostic-forage").value,
-      minimumMEDensityMJPerKgDM: $("#diagnostic-me").value, minimumCPPercentDM: $("#diagnostic-cp").value });
+      minimumForageDMFraction: $("#diagnostic-forage").value, supersessionReason: $("#diagnostic-supersession-reason").value,
+      minimumMEDensityMJPerKgDM: $("#diagnostic-me").value, minimumCPPercentDM: $("#diagnostic-cp").value };
+    const previousId = $("#diagnostic-supersedes").value;
+    if (previousId) await FarmRepository.supersedeDiagnosticProfile(previousId, input);
+    else await FarmRepository.createDiagnosticProfile(input);
     if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
     setStatus("Diagnostic profile saved inactive.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
@@ -247,9 +276,20 @@ async function handleDiagnosticSelectionSubmit(event) {
   event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
   try {
     await FarmRepository.selectDiagnosticProfile($("#diagnostic-selection-profile").value,
-      { rationale: $("#diagnostic-selection-rationale").value });
+      { rationale: $("#diagnostic-selection-rationale").value,
+        animalIds: [...$("#diagnostic-selection-animals").selectedOptions].map((option) => option.value),
+        applicabilityConfirmed: $("#diagnostic-applicability-confirmed").checked });
     if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
     setStatus("Diagnostic profile selected explicitly.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleDiagnosticArchiveSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
+  try {
+    await FarmRepository.archiveDiagnosticProfile($("#diagnostic-archive-profile").value, $("#diagnostic-archive-reason").value);
+    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
+    setStatus("Diagnostic profile archived; its historical reviews were retained.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
@@ -291,9 +331,10 @@ async function renderNutritionProfile(feedId, generation = accessGeneration) {
 
 async function refreshFeedWorkspace(generation = accessGeneration) {
   if (!canShowFarmData(generation)) return;
-  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection] = await Promise.all([FarmRepository.listFeeds(),
+  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, animals] = await Promise.all([FarmRepository.listFeeds(),
     FarmRepository.listNutritionSources(), FarmRepository.listFeedCostSources(), FarmRepository.listFeedInventoryBatches(),
-    FarmRepository.listDiagnosticProfiles(), FarmRepository.getSelectedDiagnosticProfile()]);
+    FarmRepository.listDiagnosticProfiles({ includeArchived: true }), FarmRepository.getSelectedDiagnosticProfile(),
+    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listAnimals()]);
   if (!canShowFarmData(generation)) return;
   const selectionRows = await Promise.all(feeds.map(async (feed) => [feed.id, await FarmRepository.getNutritionSelections(feed.id)]));
   if (!canShowFarmData(generation)) return;
@@ -335,7 +376,8 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   renderInventoryOptions(feeds, costSources);
   renderMovementOptions(batches);
   renderRationReview(batches, selectionsByFeed);
-  renderDiagnosticProfiles(diagnosticProfiles, diagnosticSelection);
+  renderDiagnosticProfiles(diagnosticProfiles, diagnosticSelection,
+    animals.filter((animal) => ["active", "dry"].includes(animal.status)), diagnosticHistory);
   if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
   if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
   await renderNutritionProfile(selectedFeedId, generation);
@@ -1043,6 +1085,7 @@ export async function initApp() {
   $("#ration-review-form").addEventListener("submit", handleRationReview);
   $("#diagnostic-profile-form").addEventListener("submit", handleDiagnosticProfileSubmit);
   $("#diagnostic-selection-form").addEventListener("submit", handleDiagnosticSelectionSubmit);
+  $("#diagnostic-archive-form").addEventListener("submit", handleDiagnosticArchiveSubmit);
   $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
   $("#feed-list").addEventListener("click", (event) => {
     const row = event.target.closest("[data-feed-id]");
