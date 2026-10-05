@@ -42,6 +42,8 @@ try {
   assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false); assert.equal(await page.locator("#feed-list").textContent(), "");
   await page.locator("#auth-email").fill("feed-review@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click(); await page.locator('[data-view="feeds"]:visible').waitFor();
+  await page.evaluate(async (farmId) => { const db = await new Promise((resolve, reject) => { const request = indexedDB.open("ngombe-herdbook"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    try { await new Promise((resolve, reject) => { const tx = db.transaction("animals", "readwrite"); tx.objectStore("animals").put({ id: "diagnostic-test-animal", farmId, animalCode: "TEST-DIAGNOSTIC-COW", type: "dairy_cow", status: "active" }); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
   assert.match(await page.locator(".feed-hero .feed-safety").textContent(), /not connected to ration or TMR calculations/i);
   await page.locator("#feed-name").fill("TEST feed evidence"); await page.locator("#feed-role").selectOption("forage"); await page.locator('#feed-form button[type="submit"]').click();
   await page.waitForTimeout(300);
@@ -65,8 +67,11 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await page.locator("#app-status").textContent(), "Nutrition evidence selection recorded for review.");
   await page.locator('#feed-current-selections:has-text("TEST-CITATION-001")').waitFor();
-  for (const [index, rationale] of [[3, "Synthetic reviewed dry matter"], [4, "Synthetic reviewed energy"]]) {
-    await page.locator("#feed-selection-observation").selectOption({ index });
+  for (const [nutrientLabel, rationale] of [["Dry matter", "Synthetic reviewed dry matter"], ["Metabolizable energy", "Synthetic reviewed energy"]]) {
+    const observationId = await page.locator("#feed-selection-observation").evaluate((select, label) =>
+      [...select.options].find((option) => option.textContent.startsWith(label + " ·"))?.value || "", nutrientLabel);
+    assert.notEqual(observationId, "", nutrientLabel + " observation must be selectable");
+    await page.locator("#feed-selection-observation").selectOption(observationId);
     await page.locator("#feed-selection-rationale").fill(rationale); await page.locator('#feed-selection-form button[type="submit"]').click();
     await page.locator('#feed-current-selections:has-text("' + rationale + '")').waitFor();
   }
@@ -84,7 +89,10 @@ try {
   await page.locator("#feed-movement-batch").selectOption({ index: 1 }); await page.locator("#feed-movement-date").fill("2026-09-29");
   await page.locator("#feed-movement-quantity").fill("101"); await page.locator("#feed-movement-reason").fill("Synthetic overspend rejection");
   await page.locator('#feed-movement-form button[type="submit"]').click(); await page.locator('#app-status:has-text("exceeds the available")').waitFor();
-  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
+  const rationInput = page.locator("[data-ration-batch-id]");
+  if (!await rationInput.isEnabled()) throw new Error("Ration row was disabled: " + await page.locator("#ration-review-rows").textContent() +
+    " selections=" + JSON.stringify((await rows(page, "feed_nutrition_selections")).map(({ nutrientCode, rationale }) => ({ nutrientCode, rationale }))));
+  await rationInput.fill("10"); await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
   assert.match(await page.locator("#ration-review-result").textContent(), /No diagnostic profile selected/);
   assert.equal(await page.locator("#diagnostic-forage").inputValue(), "");
@@ -100,17 +108,21 @@ try {
   await page.locator('#diagnostic-profile-list:has-text("TEST-DIAGNOSTIC-CITATION-001")').waitFor();
   assert.match(await page.locator("#diagnostic-current-selection").textContent(), /warnings are inactive/i);
   await page.locator("#diagnostic-selection-profile").selectOption({ index: 1 });
+  await page.locator("#diagnostic-selection-animals").selectOption("diagnostic-test-animal");
   await page.locator("#diagnostic-selection-rationale").fill("Synthetic explicit review decision");
+  await page.locator("#diagnostic-applicability-confirmed").check();
   await page.locator('#diagnostic-selection-form button[type="submit"]').click();
   await page.locator('#diagnostic-current-selection:has-text("Synthetic explicit review decision")').waitFor();
   await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("Applied TEST lactating profile v1")').waitFor();
   await page.locator('#ration-review-result:has-text("minimum ME density")').waitFor();
+  await page.locator('#diagnostic-history-list:has-text("TEST-DIAGNOSTIC-COW")').waitFor();
   assert.equal((await rows(page, "feed_library")).length, 1); assert.equal((await rows(page, "feed_sources")).length, 1); assert.equal((await rows(page, "feed_observations")).length, 4);
   assert.equal((await rows(page, "feed_cost_sources")).length, 1); assert.equal((await rows(page, "feed_inventory_batches")).length, 1);
   assert.equal((await rows(page, "feed_inventory_movements")).length, 1); assert.equal((await rows(page, "feed_nutrition_selections")).length, 3);
   assert.equal((await rows(page, "feed_diagnostic_profiles")).length, 1);
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1);
+  assert.equal((await rows(page, "feed_diagnostic_warning_events")).length, 1);
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('[data-feed-id]:has-text("TEST feed evidence")').waitFor(); await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
@@ -126,6 +138,7 @@ try {
   assert.equal(await page.locator("#ration-review-result").textContent(), "");
   assert.equal(await page.locator("#diagnostic-profile-list").textContent(), "");
   assert.equal(await page.locator("#diagnostic-current-selection").textContent(), "");
+  assert.equal(await page.locator("#diagnostic-history-list").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);
