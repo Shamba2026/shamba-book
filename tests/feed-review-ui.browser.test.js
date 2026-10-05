@@ -61,7 +61,10 @@ try {
     await page.locator('#feed-profile .observation:has-text("' + value + ' ' + (nutrient === "ME" ? "MJ PER KG DM" : "PERCENT") + '")').waitFor();
   }
   await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
-  await page.locator("#feed-selection-observation").selectOption({ index: 1 });
+  const proteinObservationId = await page.locator("#feed-selection-observation").evaluate((select) =>
+    [...select.options].find((option) => option.textContent.startsWith("Crude protein · 80 "))?.value || "");
+  assert.notEqual(proteinObservationId, "", "reviewed crude-protein observation must be selectable");
+  await page.locator("#feed-selection-observation").selectOption(proteinObservationId);
   await page.locator("#feed-selection-rationale").fill("Synthetic reviewed laboratory result");
   await page.locator('#feed-selection-form button[type="submit"]').click();
   await page.waitForTimeout(300);
