@@ -67,8 +67,11 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await page.locator("#app-status").textContent(), "Nutrition evidence selection recorded for review.");
   await page.locator('#feed-current-selections:has-text("TEST-CITATION-001")').waitFor();
-  for (const [index, rationale] of [[3, "Synthetic reviewed dry matter"], [4, "Synthetic reviewed energy"]]) {
-    await page.locator("#feed-selection-observation").selectOption({ index });
+  for (const [nutrientLabel, rationale] of [["Dry matter", "Synthetic reviewed dry matter"], ["Metabolizable energy", "Synthetic reviewed energy"]]) {
+    const observationId = await page.locator("#feed-selection-observation").evaluate((select, label) =>
+      [...select.options].find((option) => option.textContent.startsWith(label + " ·"))?.value || "", nutrientLabel);
+    assert.notEqual(observationId, "", nutrientLabel + " observation must be selectable");
+    await page.locator("#feed-selection-observation").selectOption(observationId);
     await page.locator("#feed-selection-rationale").fill(rationale); await page.locator('#feed-selection-form button[type="submit"]').click();
     await page.locator('#feed-current-selections:has-text("' + rationale + '")').waitFor();
   }
