@@ -132,6 +132,7 @@ try {
   await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
   await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
+  await page.locator("#animal-profile:visible").waitFor();
   await page.locator("#classification-date").fill("2026-10-05"); await page.locator("#classification-weight").fill("480");
   await page.locator("#classification-weight-method").selectOption("SCALE_MEASURED"); await page.locator("#classification-physiology").selectOption("POSTPARTUM");
   await page.locator("#classification-lactation-status").selectOption("LACTATING"); await page.locator("#classification-lactation-stage").selectOption("EARLY");
@@ -144,7 +145,8 @@ try {
   assert.equal((await rows(page, "animal_nutrition_classifications")).length, 1);
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav="animals"]').click();
-  await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
+  await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
+  await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor(); await page.waitForTimeout(100);
   assert.equal(await page.locator("#feed-list").textContent(), ""); assert.equal(await page.locator("#feed-source-list").textContent(), ""); assert.equal(await page.locator("#feed-profile").textContent(), "");
   assert.equal(await page.locator("#feed-cost-source-list").textContent(), ""); assert.equal(await page.locator("#feed-inventory-list").textContent(), "");
