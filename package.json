@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/farm-rules.test.js && node tests/cloud-mapping.test.js && node tests/auth-dom-boundary.test.js && node tests/finance-validation.test.js && node tests/finance-domain.test.js && node tests/feed-evidence.test.js && node tests/nutrition-profile.test.js && node tests/feed-inventory.test.js && node tests/feed-inventory-semantics.test.js && node tests/feed-math.test.js && node tests/ration-diagnostics.test.js",
+    "test": "node tests/farm-rules.test.js && node tests/cloud-mapping.test.js && node tests/auth-dom-boundary.test.js && node tests/finance-validation.test.js && node tests/finance-domain.test.js && node tests/feed-evidence.test.js && node tests/nutrition-profile.test.js && node tests/feed-inventory.test.js && node tests/feed-inventory-semantics.test.js && node tests/feed-math.test.js && node tests/ration-contract.test.js && node tests/ration-diagnostics.test.js",
     "test:browser": "node tests/feed-library.browser.test.js && node tests/feed-provenance.browser.test.js && node tests/feed-inventory.browser.test.js && node tests/feed-inventory-semantics.browser.test.js && node tests/feed-review-ui.browser.test.js && node tests/local-first.browser.test.js"
   },
   "devDependencies": {

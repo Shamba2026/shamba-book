@@ -50,9 +50,10 @@ try {
   await page.locator("#feed-source-title").fill("TEST laboratory report"); await page.locator("#feed-source-type").selectOption("lab_report");
   await page.locator("#feed-source-citation").fill("TEST-CITATION-001"); await page.locator("#feed-source-publisher").fill("Synthetic laboratory");
   await page.locator('#feed-source-form button[type="submit"]').click(); await page.locator('#feed-source-list:has-text("TEST-CITATION-001")').waitFor();
-  for (const [value, evidence] of [["80", "VERIFIED_LAB"], ["60", "RESEARCH_SUPPORTED"]]) {
+  for (const [nutrient, value, evidence] of [["CP", "80", "VERIFIED_LAB"], ["CP", "60", "RESEARCH_SUPPORTED"],
+    ["DM", "25", "VERIFIED_LAB"], ["ME", "10.5", "VERIFIED_LAB"]]) {
     await page.locator("#feed-observation-source").selectOption({ index: 1 });
-    await page.locator("#feed-observation-nutrient").selectOption("CP"); await page.locator("#feed-observation-value").fill(value);
+    await page.locator("#feed-observation-nutrient").selectOption(nutrient); await page.locator("#feed-observation-value").fill(value);
     await page.locator("#feed-observation-evidence").selectOption(evidence); await page.locator("#feed-observation-date").fill("2026-09-28");
     await page.locator('#feed-observation-form button[type="submit"]').click(); await page.locator('#app-status:has-text("Nutrition observation saved")').waitFor();
   }
@@ -61,6 +62,11 @@ try {
   await page.locator("#feed-selection-rationale").fill("Synthetic reviewed laboratory result");
   await page.locator('#feed-selection-form button[type="submit"]').click();
   await page.locator('#feed-current-selections:has-text("TEST-CITATION-001")').waitFor();
+  for (const [index, rationale] of [[3, "Synthetic reviewed dry matter"], [4, "Synthetic reviewed energy"]]) {
+    await page.locator("#feed-selection-observation").selectOption({ index });
+    await page.locator("#feed-selection-rationale").fill(rationale); await page.locator('#feed-selection-form button[type="submit"]').click();
+    await page.locator('#app-status:has-text("Nutrition evidence selection recorded")').waitFor();
+  }
   await page.locator("#feed-cost-type").selectOption("receipt"); await page.locator("#feed-cost-date").fill("2026-09-28");
   await page.locator("#feed-cost-reference").fill("TEST-RECEIPT-001"); await page.locator("#feed-cost-counterparty").fill("Synthetic supplier");
   await page.locator('#feed-cost-source-form button[type="submit"]').click(); await page.locator('#feed-cost-source-list:has-text("TEST-RECEIPT-001")').waitFor();
@@ -75,19 +81,25 @@ try {
   await page.locator("#feed-movement-batch").selectOption({ index: 1 }); await page.locator("#feed-movement-date").fill("2026-09-29");
   await page.locator("#feed-movement-quantity").fill("101"); await page.locator("#feed-movement-reason").fill("Synthetic overspend rejection");
   await page.locator('#feed-movement-form button[type="submit"]').click(); await page.locator('#app-status:has-text("exceeds the available")').waitFor();
-  assert.equal((await rows(page, "feed_library")).length, 1); assert.equal((await rows(page, "feed_sources")).length, 1); assert.equal((await rows(page, "feed_observations")).length, 2);
+  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
+  await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
+  assert.match(await page.locator("#ration-review-result").textContent(), /No adequacy diagnosis/);
+  assert.equal((await rows(page, "feed_library")).length, 1); assert.equal((await rows(page, "feed_sources")).length, 1); assert.equal((await rows(page, "feed_observations")).length, 4);
   assert.equal((await rows(page, "feed_cost_sources")).length, 1); assert.equal((await rows(page, "feed_inventory_batches")).length, 1);
-  assert.equal((await rows(page, "feed_inventory_movements")).length, 1); assert.equal((await rows(page, "feed_nutrition_selections")).length, 1);
+  assert.equal((await rows(page, "feed_inventory_movements")).length, 1); assert.equal((await rows(page, "feed_nutrition_selections")).length, 3);
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('[data-feed-id]:has-text("TEST feed evidence")').waitFor(); await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
   await page.locator('#feed-inventory-list:has-text("TEST-RECEIPT-001")').waitFor();
   await page.locator('#feed-inventory-list:has-text("100.5 kg remaining")').waitFor(); await page.locator('#feed-current-selections:has-text("Synthetic reviewed laboratory result")').waitFor();
+  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
+  await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor(); await page.waitForTimeout(100);
   assert.equal(await page.locator("#feed-list").textContent(), ""); assert.equal(await page.locator("#feed-source-list").textContent(), ""); assert.equal(await page.locator("#feed-profile").textContent(), "");
   assert.equal(await page.locator("#feed-cost-source-list").textContent(), ""); assert.equal(await page.locator("#feed-inventory-list").textContent(), "");
   assert.equal(await page.locator("#feed-movement-list").textContent(), ""); assert.equal(await page.locator("#feed-current-selections").textContent(), "");
-  assert.equal((await rows(page, "feed_observations")).length, 2, "sign-out must conceal, not delete, local evidence");
+  assert.equal(await page.locator("#ration-review-result").textContent(), "");
+  assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);
   assert.deepEqual(errors, []); console.log("feed-review-ui.browser.test.js: PASS");
