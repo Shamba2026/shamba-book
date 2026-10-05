@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -111,6 +111,21 @@ export function openLocalDatabase() {
         store.createIndex("feedId", "feedId", { unique: false });
         store.createIndex("nutrientCode", "nutrientCode", { unique: false });
         store.createIndex("observationId", "observationId", { unique: false });
+      }
+
+      // Version 6 is additive. Diagnostic profiles carry their own evidence,
+      // applicability and version; only an explicit selection can activate one.
+      if (!db.objectStoreNames.contains("feed_diagnostic_profiles")) {
+        const store = db.createObjectStore("feed_diagnostic_profiles", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("animalClass", "animalClass", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("feed_diagnostic_profile_selections")) {
+        const store = db.createObjectStore("feed_diagnostic_profile_selections", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("profileId", "profileId", { unique: false });
+        store.createIndex("selectedAt", "selectedAt", { unique: false });
       }
     };
 

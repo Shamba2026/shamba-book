@@ -1,7 +1,9 @@
-import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20260928-02";
+import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261005-03";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
+import { currentDiagnosticProfileSelection, validateDiagnosticProfile,
+  validateDiagnosticProfileSelection } from "../domain/feed/diagnostic-profile.js?build=20261005-03";
 
 let activeFarmId = null;
 
@@ -416,6 +418,46 @@ export async function getNutritionSelections(feedId) {
     return [code, Object.freeze({ ...selection, observation,
       source: observation ? sourceById.get(observation.sourceId) || null : null })];
   })));
+}
+
+export async function createDiagnosticProfile(input) {
+  const farmId = requireFarm();
+  const validated = validateDiagnosticProfile(input);
+  const duplicate = farmRows(await getAll("feed_diagnostic_profiles")).find((row) =>
+    row.status !== "archived" && row.name.toLocaleLowerCase() === validated.name.toLocaleLowerCase() && row.version === validated.version);
+  if (duplicate) throw new Error("That diagnostic profile name and version already exist in this farm.");
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const timestamp = now();
+  const profile = { id: newId(), farmId, ...validated, status: "active", createdAt: timestamp, updatedAt: timestamp };
+  await putAtomically([{ storeName: "feed_diagnostic_profiles", value: profile }]);
+  return profile;
+}
+
+export async function listDiagnosticProfiles({ includeArchived = false } = {}) {
+  return farmRows(await getAll("feed_diagnostic_profiles"))
+    .filter((row) => includeArchived || row.status !== "archived")
+    .sort((a, b) => a.name.localeCompare(b.name) || b.version - a.version);
+}
+
+export async function selectDiagnosticProfile(profileId, input) {
+  const farmId = requireFarm();
+  const validated = validateDiagnosticProfileSelection({ ...input, profileId });
+  const profile = await get("feed_diagnostic_profiles", validated.profileId);
+  if (!profile || profile.farmId !== farmId || profile.status === "archived") throw new Error("Diagnostic profile is not active in this farm.");
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const selection = { id: newId(), farmId, ...validated, selectedAt: now() };
+  await putAtomically([{ storeName: "feed_diagnostic_profile_selections", value: selection }]);
+  return selection;
+}
+
+export async function getSelectedDiagnosticProfile() {
+  const farmId = requireFarm();
+  const [profiles, events] = await Promise.all([getAll("feed_diagnostic_profiles"), getAll("feed_diagnostic_profile_selections")]);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
+  const selection = currentDiagnosticProfileSelection(events.filter((row) => row.farmId === farmId));
+  if (!selection) return null;
+  const profile = profiles.find((row) => row.id === selection.profileId && row.farmId === farmId && row.status !== "archived");
+  return profile ? Object.freeze({ profile, selection }) : null;
 }
 
 export async function getPendingSyncCount() {
