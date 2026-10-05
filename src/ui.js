@@ -18,6 +18,7 @@ let accessGeneration = 0;
 let selectedDiagnosticProfile = null;
 
 function clearFarmView() {
+  feedRefreshGeneration += 1;
   ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
     "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
     "#feed-movement-form", "#feed-selection-form", "#ration-review-form", "#diagnostic-profile-form",
@@ -135,6 +136,7 @@ const evidenceClasses = [["VERIFIED_LAB", "Verified laboratory"], ["RESEARCH_SUP
   ["RANGE_ESTIMATE", "Range estimate"], ["PROVISIONAL", "Provisional"], ["UNKNOWN", "Unknown"]];
 let selectedFeedId = null;
 let rationReviewRows = [];
+let feedRefreshGeneration = 0;
 
 function selectNutritionMetric() {
   const nutrient = $("#feed-observation-nutrient").value;
@@ -331,14 +333,15 @@ async function renderNutritionProfile(feedId, generation = accessGeneration) {
 }
 
 async function refreshFeedWorkspace(generation = accessGeneration) {
+  const refreshGeneration = ++feedRefreshGeneration;
   if (!canShowFarmData(generation)) return;
   const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, animals] = await Promise.all([FarmRepository.listFeeds(),
     FarmRepository.listNutritionSources(), FarmRepository.listFeedCostSources(), FarmRepository.listFeedInventoryBatches(),
     FarmRepository.listDiagnosticProfiles({ includeArchived: true }), FarmRepository.getSelectedDiagnosticProfile(),
     FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listAnimals()]);
-  if (!canShowFarmData(generation)) return;
+  if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
   const selectionRows = await Promise.all(feeds.map(async (feed) => [feed.id, await FarmRepository.getNutritionSelections(feed.id)]));
-  if (!canShowFarmData(generation)) return;
+  if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
   const selectionsByFeed = new Map(selectionRows);
   $("#feed-count").textContent = feeds.length + (feeds.length === 1 ? " feed" : " feeds");
   $("#feed-source-count").textContent = sources.length + (sources.length === 1 ? " source" : " sources");
