@@ -16,7 +16,8 @@ let accessGeneration = 0;
 
 function clearFarmView() {
   ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
-    "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form"].forEach((selector) => {
+    "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
+    "#feed-movement-form", "#feed-selection-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -48,21 +49,27 @@ function clearFarmView() {
   for (const id of ["#finance-income", "#finance-expense", "#finance-net"]) $(id).textContent = "KSh 0.00";
   $("#finance-count").textContent = "0 entries";
   selectedFeedId = null;
-  ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list"].forEach((selector) => $(selector).replaceChildren());
-  ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source"].forEach((selector) => $(selector).replaceChildren());
+  ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list",
+    "#feed-movement-list", "#feed-current-selections"].forEach((selector) => $(selector).replaceChildren());
+  ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source",
+    "#feed-movement-batch", "#feed-selection-observation"].forEach((selector) => $(selector).replaceChildren());
   $("#feed-count").textContent = "0 feeds";
   $("#feed-source-count").textContent = "0 sources";
   $("#feed-cost-source-count").textContent = "0 sources";
   $("#feed-inventory-count").textContent = "0 batches";
+  $("#feed-movement-count").textContent = "0 movements";
   $("#feed-empty").hidden = false;
   $("#feed-source-empty").hidden = false;
   $("#feed-cost-source-empty").hidden = false;
   $("#feed-inventory-empty").hidden = false;
+  $("#feed-movement-empty").hidden = false;
+  $("#feed-selection-form").hidden = true;
   $("#feed-profile-empty").hidden = false;
   $("#feed-profile-empty").textContent = "Choose a feed from the farm library to review its observations.";
   $("#feed-profile-title").textContent = "Select a feed";
   $("#feed-cost-date").value = toLocalDateString();
   $("#feed-batch-date").value = toLocalDateString();
+  $("#feed-movement-date").value = toLocalDateString();
   $("#feed-batch-currency").value = "KES";
 }
 
@@ -136,6 +143,11 @@ function renderInventoryOptions(feeds, costSources) {
     ...costSources.map((source) => new Option(source.reference, source.id)));
 }
 
+function renderMovementOptions(batches) {
+  $("#feed-movement-batch").replaceChildren(new Option("Choose inventory batch", ""), ...batches.map((batch) =>
+    new Option((batch.feed?.name || "Feed unavailable") + " · " + batch.remainingQuantityKg + " kg remaining", batch.id)));
+}
+
 function formatBatchMoney(cents, currency) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
 }
@@ -150,8 +162,9 @@ async function renderNutritionProfile(feedId, generation = accessGeneration) {
     $("#feed-profile-empty").hidden = false;
     return;
   }
-  const profile = await FarmRepository.getNutritionProfile(feedId);
-  if (!canShowFarmData(generation) || selectedFeedId !== feedId || !profile) return;
+  const [profile, selections] = await Promise.all([FarmRepository.getNutritionProfile(feedId),
+    FarmRepository.getNutritionSelections(feedId)]);
+  if (!canShowFarmData(generation) || selectedFeedId !== feedId || !profile || !selections) return;
   $("#feed-profile-title").textContent = profile.feed.name;
   const groups = Object.entries(profile.nutrients);
   $("#feed-profile-empty").hidden = groups.length > 0;
@@ -164,6 +177,15 @@ async function renderNutritionProfile(feedId, generation = accessGeneration) {
     escapeHtml(row.evidenceClass.replaceAll("_", " ") + " · " + (row.observedAt || "Date not recorded")) +
     '</small><small>' + escapeHtml(row.source.title + " — " + row.source.citation) + '</small>' +
     (row.context ? '<small>' + escapeHtml(row.context) + '</small>' : '') + '</div>').join("") + '</section>').join("");
+  const observations = groups.flatMap(([code, rows]) => rows.map((row) => ({ ...row, code })));
+  $("#feed-selection-form").hidden = observations.length === 0;
+  $("#feed-selection-observation").replaceChildren(new Option("Choose an observation", ""), ...observations.map((row) =>
+    new Option((nutrientLabels[row.code] || row.code) + " · " + row.value + " " + row.unit.replaceAll("_", " ") + " · " + row.source.title, row.id)));
+  $("#feed-current-selections").innerHTML = Object.entries(selections).map(([code, selection]) =>
+    '<div class="evidence-row selection-current"><strong>Selected ' + escapeHtml(nutrientLabels[code] || code) + '</strong><small>' +
+    escapeHtml(selection.observation ? selection.observation.value + " " + selection.observation.unit.replaceAll("_", " ") : "Observation unavailable") +
+    '</small><small>' + escapeHtml(selection.source?.citation || "Source unavailable") + '</small><small>Rationale: ' +
+    escapeHtml(selection.rationale) + '</small></div>').join("");
 }
 
 async function refreshFeedWorkspace(generation = accessGeneration) {
@@ -175,10 +197,13 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   $("#feed-source-count").textContent = sources.length + (sources.length === 1 ? " source" : " sources");
   $("#feed-cost-source-count").textContent = costSources.length + (costSources.length === 1 ? " source" : " sources");
   $("#feed-inventory-count").textContent = batches.length + (batches.length === 1 ? " batch" : " batches");
+  const movements = batches.flatMap((batch) => batch.movements.map((movement) => ({ ...movement, batch })));
+  $("#feed-movement-count").textContent = movements.length + (movements.length === 1 ? " movement" : " movements");
   $("#feed-empty").hidden = feeds.length > 0;
   $("#feed-source-empty").hidden = sources.length > 0;
   $("#feed-cost-source-empty").hidden = costSources.length > 0;
   $("#feed-inventory-empty").hidden = batches.length > 0;
+  $("#feed-movement-empty").hidden = movements.length > 0;
   $("#feed-list").innerHTML = feeds.map((feed) => '<button type="button" class="feed-row" data-feed-id="' +
     escapeHtml(feed.id) + '"><span><strong>' + escapeHtml(feed.name) + '</strong><small>' +
     escapeHtml(feedRoleLabels[feed.role] || feed.role) + '</small></span><span aria-hidden="true">Review →</span></button>').join("");
@@ -192,13 +217,18 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   $("#feed-inventory-list").innerHTML = batches.map((batch) => {
     const unitCost = unitCostPerKg(batch);
     return '<div class="evidence-row"><strong>' + escapeHtml(batch.feed?.name || "Feed unavailable") + '</strong><small>' +
-      escapeHtml(batch.receivedQuantityKg + " kg as fed · " + batch.receivedAt) + '</small><small>' +
+      escapeHtml(batch.remainingQuantityKg + " kg remaining of " + batch.receivedQuantityKg + " kg received · " + batch.receivedAt) + '</small><small>' +
       escapeHtml(formatBatchMoney(batch.totalCostCents, batch.currencyCode) + (unitCost === null ? "" : " · " +
         formatBatchMoney(Math.round(unitCost), batch.currencyCode) + "/kg")) + '</small><small>Cost source: ' +
       escapeHtml(batch.costSource?.reference || "Source unavailable") + '</small></div>';
   }).join("");
+  $("#feed-movement-list").innerHTML = movements.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((movement) =>
+    '<div class="evidence-row"><strong>' + escapeHtml(movement.batch.feed?.name || "Feed unavailable") + '</strong><small>' +
+    escapeHtml(movement.movementType.replaceAll("_", " ") + " · " + movement.inputQuantity + " " + movement.inputUnit.replaceAll("_AS_FED", "").replaceAll("_", " ") + " · " + movement.movementDate) +
+    '</small><small>' + escapeHtml(movement.reason) + '</small></div>').join("");
   renderFeedOptions(feeds, sources);
   renderInventoryOptions(feeds, costSources);
+  renderMovementOptions(batches);
   if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
   if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
   await renderNutritionProfile(selectedFeedId, generation);
@@ -227,6 +257,30 @@ async function handleFeedBatchSubmit(event) {
     if (!canShowFarmData(generation)) return;
     form.reset(); $("#feed-batch-date").value = toLocalDateString(); $("#feed-batch-currency").value = "KES";
     await refreshFeedWorkspace(generation); setStatus("Feed inventory batch saved for review.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleFeedMovementSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
+  try {
+    await FarmRepository.recordFeedInventoryMovement($("#feed-movement-batch").value, {
+      movementType: $("#feed-movement-type").value, movementDate: $("#feed-movement-date").value,
+      quantity: $("#feed-movement-quantity").value, unit: $("#feed-movement-unit").value,
+      reason: $("#feed-movement-reason").value });
+    if (!canShowFarmData(generation)) return;
+    form.reset(); $("#feed-movement-date").value = toLocalDateString();
+    await refreshFeedWorkspace(generation); setStatus("Feed inventory movement saved.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleFeedSelectionSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
+  try {
+    await FarmRepository.selectNutritionObservation(selectedFeedId, { observationId: $("#feed-selection-observation").value,
+      rationale: $("#feed-selection-rationale").value });
+    if (!canShowFarmData(generation)) return;
+    form.reset(); await renderNutritionProfile(selectedFeedId, generation);
+    setStatus("Nutrition evidence selection recorded for review.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
@@ -843,6 +897,7 @@ export async function initApp() {
   $("#finance-date").value = toLocalDateString();
   $("#feed-cost-date").value = toLocalDateString();
   $("#feed-batch-date").value = toLocalDateString();
+  $("#feed-movement-date").value = toLocalDateString();
   selectFinanceDirection("income");
   selectMilkSession("morning");
   $("#feed-observation-evidence").replaceChildren(...evidenceClasses.map(([value, label]) => new Option(label, value)));
@@ -876,6 +931,8 @@ export async function initApp() {
   $("#feed-observation-form").addEventListener("submit", handleFeedObservationSubmit);
   $("#feed-cost-source-form").addEventListener("submit", handleFeedCostSourceSubmit);
   $("#feed-batch-form").addEventListener("submit", handleFeedBatchSubmit);
+  $("#feed-movement-form").addEventListener("submit", handleFeedMovementSubmit);
+  $("#feed-selection-form").addEventListener("submit", handleFeedSelectionSubmit);
   $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
   $("#feed-list").addEventListener("click", (event) => {
     const row = event.target.closest("[data-feed-id]");
