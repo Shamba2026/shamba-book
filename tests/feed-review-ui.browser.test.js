@@ -89,7 +89,10 @@ try {
   await page.locator("#feed-movement-batch").selectOption({ index: 1 }); await page.locator("#feed-movement-date").fill("2026-09-29");
   await page.locator("#feed-movement-quantity").fill("101"); await page.locator("#feed-movement-reason").fill("Synthetic overspend rejection");
   await page.locator('#feed-movement-form button[type="submit"]').click(); await page.locator('#app-status:has-text("exceeds the available")').waitFor();
-  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
+  const rationInput = page.locator("[data-ration-batch-id]");
+  if (!await rationInput.isEnabled()) throw new Error("Ration row was disabled: " + await page.locator("#ration-review-rows").textContent() +
+    " selections=" + JSON.stringify((await rows(page, "feed_nutrition_selections")).map(({ nutrientCode, rationale }) => ({ nutrientCode, rationale }))));
+  await rationInput.fill("10"); await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
   assert.match(await page.locator("#ration-review-result").textContent(), /No diagnostic profile selected/);
   assert.equal(await page.locator("#diagnostic-forage").inputValue(), "");
