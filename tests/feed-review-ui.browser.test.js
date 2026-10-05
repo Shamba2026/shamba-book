@@ -68,7 +68,7 @@ try {
   for (const [index, rationale] of [[3, "Synthetic reviewed dry matter"], [4, "Synthetic reviewed energy"]]) {
     await page.locator("#feed-selection-observation").selectOption({ index });
     await page.locator("#feed-selection-rationale").fill(rationale); await page.locator('#feed-selection-form button[type="submit"]').click();
-    await page.locator('#app-status:has-text("Nutrition evidence selection recorded")').waitFor();
+    await page.locator('#feed-current-selections:has-text("' + rationale + '")').waitFor();
   }
   await page.locator("#feed-cost-type").selectOption("receipt"); await page.locator("#feed-cost-date").fill("2026-09-28");
   await page.locator("#feed-cost-reference").fill("TEST-RECEIPT-001"); await page.locator("#feed-cost-counterparty").fill("Synthetic supplier");
