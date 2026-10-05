@@ -4,6 +4,7 @@ import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } fro
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
 import * as FarmRepository from "./storage/farm-repository.js?build=20260928-04";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
+import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
@@ -17,7 +18,7 @@ let accessGeneration = 0;
 function clearFarmView() {
   ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
     "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
-    "#feed-movement-form", "#feed-selection-form"].forEach((selector) => {
+    "#feed-movement-form", "#feed-selection-form", "#ration-review-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -50,7 +51,7 @@ function clearFarmView() {
   $("#finance-count").textContent = "0 entries";
   selectedFeedId = null;
   ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list",
-    "#feed-movement-list", "#feed-current-selections"].forEach((selector) => $(selector).replaceChildren());
+    "#feed-movement-list", "#feed-current-selections", "#ration-review-rows", "#ration-review-result"].forEach((selector) => $(selector).replaceChildren());
   ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source",
     "#feed-movement-batch", "#feed-selection-observation"].forEach((selector) => $(selector).replaceChildren());
   $("#feed-count").textContent = "0 feeds";
@@ -64,6 +65,8 @@ function clearFarmView() {
   $("#feed-inventory-empty").hidden = false;
   $("#feed-movement-empty").hidden = false;
   $("#feed-selection-form").hidden = true;
+  $("#ration-review-empty").hidden = false;
+  $("#ration-review-calculate").disabled = true;
   $("#feed-profile-empty").hidden = false;
   $("#feed-profile-empty").textContent = "Choose a feed from the farm library to review its observations.";
   $("#feed-profile-title").textContent = "Select a feed";
@@ -119,6 +122,7 @@ const evidenceClasses = [["VERIFIED_LAB", "Verified laboratory"], ["RESEARCH_SUP
   ["CALCULATED", "Calculated"], ["MODEL_ESTIMATED", "Model estimated"],
   ["RANGE_ESTIMATE", "Range estimate"], ["PROVISIONAL", "Provisional"], ["UNKNOWN", "Unknown"]];
 let selectedFeedId = null;
+let rationReviewRows = [];
 
 function selectNutritionMetric() {
   const nutrient = $("#feed-observation-nutrient").value;
@@ -150,6 +154,43 @@ function renderMovementOptions(batches) {
 
 function formatBatchMoney(cents, currency) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
+}
+
+function renderRationReview(batches, selectionsByFeed) {
+  rationReviewRows = batches.map((batch) => ({ batch, feed: batch.feed, selections: selectionsByFeed.get(batch.feedId) || {} }));
+  $("#ration-review-rows").innerHTML = rationReviewRows.map((row) => {
+    const missing = ["DM", "ME", "CP"].filter((code) => !row.selections[code]?.observation);
+    return '<label class="ration-row"><span><strong>' + escapeHtml(row.feed?.name || "Feed unavailable") + '</strong><small>' +
+      escapeHtml(row.batch.remainingQuantityKg + " kg available" + (missing.length ? " · Missing selected " + missing.join(", ") : " · Evidence ready")) +
+      '</small></span><input type="number" min="0" max="' + escapeHtml(row.batch.remainingQuantityKg) +
+      '" step="0.001" value="0" data-ration-batch-id="' + escapeHtml(row.batch.id) + '" aria-label="As-fed kg for ' +
+      escapeHtml(row.feed?.name || "feed") + '" ' + (missing.length ? "disabled" : "") + '></label>';
+  }).join("");
+  const ready = rationReviewRows.some((row) => ["DM", "ME", "CP"].every((code) => row.selections[code]?.observation));
+  $("#ration-review-empty").hidden = ready;
+  $("#ration-review-calculate").disabled = !ready;
+  $("#ration-review-result").replaceChildren();
+}
+
+function handleRationReview(event) {
+  event.preventDefault();
+  try {
+    const quantities = new Map([...document.querySelectorAll("[data-ration-batch-id]")]
+      .map((input) => [input.dataset.rationBatchId, Number(input.value || 0)]));
+    const rows = rationReviewRows.map((row) => ({ ...row,
+      asFedKg: quantities.get(row.batch.id) || 0 }))
+      .filter((row) => row.asFedKg > 0);
+    const ration = buildReadOnlyRation(rows);
+    const forageShare = ration.forageDMKg / ration.totalDMIKg * 100;
+    $("#ration-review-result").innerHTML = '<div class="ration-metrics"><div><small>As fed</small><strong>' +
+      escapeHtml(ration.totalAsFedKg.toFixed(3)) + ' kg</strong></div><div><small>Dry matter</small><strong>' +
+      escapeHtml(ration.totalDMIKg.toFixed(3)) + ' kg</strong></div><div><small>ME density</small><strong>' +
+      escapeHtml(ration.meDensityMJPerKgDM.toFixed(2)) + ' MJ/kg DM</strong></div><div><small>Crude protein</small><strong>' +
+      escapeHtml(ration.cpPercentDM.toFixed(2)) + '% DM</strong></div><div><small>Forage DM share</small><strong>' +
+      escapeHtml(forageShare.toFixed(1)) + '%</strong></div><div><small>Estimated cost</small><strong>' +
+      escapeHtml(formatBatchMoney(ration.totalCostCents, ration.currencyCode)) + '</strong></div></div><p class="muted">Calculation only. No adequacy diagnosis, ration save or inventory movement was created.</p>';
+    setStatus("Read-only ration calculation completed.", "success");
+  } catch (error) { setStatus(error.message || String(error), "error"); $("#ration-review-result").replaceChildren(); }
 }
 
 async function renderNutritionProfile(feedId, generation = accessGeneration) {
@@ -193,6 +234,9 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   const [feeds, sources, costSources, batches] = await Promise.all([FarmRepository.listFeeds(),
     FarmRepository.listNutritionSources(), FarmRepository.listFeedCostSources(), FarmRepository.listFeedInventoryBatches()]);
   if (!canShowFarmData(generation)) return;
+  const selectionRows = await Promise.all(feeds.map(async (feed) => [feed.id, await FarmRepository.getNutritionSelections(feed.id)]));
+  if (!canShowFarmData(generation)) return;
+  const selectionsByFeed = new Map(selectionRows);
   $("#feed-count").textContent = feeds.length + (feeds.length === 1 ? " feed" : " feeds");
   $("#feed-source-count").textContent = sources.length + (sources.length === 1 ? " source" : " sources");
   $("#feed-cost-source-count").textContent = costSources.length + (costSources.length === 1 ? " source" : " sources");
@@ -229,6 +273,7 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   renderFeedOptions(feeds, sources);
   renderInventoryOptions(feeds, costSources);
   renderMovementOptions(batches);
+  renderRationReview(batches, selectionsByFeed);
   if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
   if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
   await renderNutritionProfile(selectedFeedId, generation);
@@ -279,7 +324,7 @@ async function handleFeedSelectionSubmit(event) {
     await FarmRepository.selectNutritionObservation(selectedFeedId, { observationId: $("#feed-selection-observation").value,
       rationale: $("#feed-selection-rationale").value });
     if (!canShowFarmData(generation)) return;
-    form.reset(); await renderNutritionProfile(selectedFeedId, generation);
+    form.reset(); await refreshFeedWorkspace(generation);
     setStatus("Nutrition evidence selection recorded for review.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
@@ -933,6 +978,7 @@ export async function initApp() {
   $("#feed-batch-form").addEventListener("submit", handleFeedBatchSubmit);
   $("#feed-movement-form").addEventListener("submit", handleFeedMovementSubmit);
   $("#feed-selection-form").addEventListener("submit", handleFeedSelectionSubmit);
+  $("#ration-review-form").addEventListener("submit", handleRationReview);
   $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
   $("#feed-list").addEventListener("click", (event) => {
     const row = event.target.closest("[data-feed-id]");
