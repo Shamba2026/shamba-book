@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { validateAnimalNutritionClassification } from "../src/domain/animal-nutrition-classification.js";
+import { validateAnimalNutritionClassification, validateAnimalNutritionReview } from "../src/domain/animal-nutrition-classification.js";
 
 const valid = { observedAt: "2026-10-05", liveWeightKg: "475.5", weightMethod: "SCALE_MEASURED",
   physiologicalStage: "POSTPARTUM", lactationStatus: "LACTATING", lactationStage: "EARLY",
@@ -22,4 +22,10 @@ assert.throws(() => validateAnimalNutritionClassification({ ...valid, physiologi
 const nonLactating = validateAnimalNutritionClassification({ ...valid, lactationStatus: "NOT_APPLICABLE",
   lactationStage: "NOT_APPLICABLE", averageDailyMilkLiters: "", productionWindowDays: "" });
 assert.equal(nonLactating.averageDailyMilkLiters, null);
+const review = validateAnimalNutritionReview({ evidenceDecision: "CONFIRMED", applicabilityDecision: "APPLICABLE",
+  profileId: "profile-1", reviewerUserId: "reviewer-1", rationale: "Evidence and profile applicability reviewed.", reviewerConfirmed: true });
+assert.equal(review.applicabilityDecision, "APPLICABLE");
+assert.throws(() => validateAnimalNutritionReview({ ...review, evidenceDecision: "NEEDS_CORRECTION" }), /confirmed/);
+assert.throws(() => validateAnimalNutritionReview({ ...review, profileId: "", applicabilityDecision: "APPLICABLE" }), /Select a diagnostic profile/);
+assert.throws(() => validateAnimalNutritionReview({ ...review, reviewerConfirmed: false }), /confirmation/);
 console.log("animal-nutrition-classification.test.js: PASS");

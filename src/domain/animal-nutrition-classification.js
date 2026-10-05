@@ -4,6 +4,8 @@ const LACTATION_STAGES = new Set(["EARLY", "MID", "LATE", "OTHER_DOCUMENTED", "N
 const PRODUCTION_CONTEXTS = new Set(["DAIRY", "BEEF_GROWING", "BEEF_FINISHING", "BREEDING", "MAINTENANCE", "OTHER_DOCUMENTED"]);
 const WEIGHT_METHODS = new Set(["SCALE_MEASURED", "WEIGH_TAPE_ESTIMATED", "OTHER_DOCUMENTED"]);
 const EVIDENCE_TYPES = new Set(["DIRECT_MEASUREMENT", "FARM_RECORD", "VETERINARY_ASSESSMENT", "DOCUMENTED_GUIDANCE", "OTHER_DOCUMENTED"]);
+const EVIDENCE_DECISIONS = new Set(["CONFIRMED", "NEEDS_CORRECTION", "REJECTED"]);
+const APPLICABILITY_DECISIONS = new Set(["NOT_ASSESSED", "APPLICABLE", "NOT_APPLICABLE", "NEEDS_REVIEW"]);
 
 function requiredText(value, label, max) {
   const text = String(value || "").trim().replace(/\s+/g, " ");
@@ -68,4 +70,19 @@ export function validateAnimalNutritionClassification(input) {
     sourceUrl,
     applicabilityNotes: requiredText(input?.applicabilityNotes, "Classification basis and limitations", 1000)
   });
+}
+
+export function validateAnimalNutritionReview(input) {
+  const evidenceDecision = enumValue(input?.evidenceDecision, EVIDENCE_DECISIONS, "evidence decision");
+  const applicabilityDecision = enumValue(input?.applicabilityDecision, APPLICABILITY_DECISIONS, "applicability decision");
+  const profileId = String(input?.profileId || "").trim() || null;
+  if (profileId && applicabilityDecision === "NOT_ASSESSED") throw new Error("Record an applicability decision for the selected profile.");
+  if (!profileId && applicabilityDecision !== "NOT_ASSESSED") throw new Error("Select a diagnostic profile before recording applicability.");
+  if (applicabilityDecision === "APPLICABLE" && evidenceDecision !== "CONFIRMED") {
+    throw new Error("Only confirmed classification evidence can be marked applicable.");
+  }
+  if (input?.reviewerConfirmed !== true) throw new Error("Reviewer confirmation is required.");
+  return Object.freeze({ evidenceDecision, applicabilityDecision, profileId,
+    reviewerUserId: requiredText(input?.reviewerUserId, "Authenticated reviewer", 100),
+    rationale: requiredText(input?.rationale, "Review rationale", 1000), reviewerConfirmed: true });
 }

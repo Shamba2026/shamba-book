@@ -126,7 +126,17 @@
               <div class="field full"><button class="primary" type="submit">Save evidence observation</button></div>
             </div>
           </form>
-          <div class="card"><div class="section-head"><h3>Classification history</h3><span id="classification-count" class="chip">0 observations</span></div><p id="classification-empty" class="muted">No classification evidence recorded for this animal.</p><div id="classification-list" class="feed-list"></div></div>
+          <div class="card"><div class="section-head"><h3>Classification history</h3><span id="classification-count" class="chip">0 observations</span></div><p id="classification-empty" class="muted">No classification evidence recorded for this animal.</p><div id="classification-list" class="feed-list"></div>
+            <form id="animal-nutrition-review-form" hidden style="margin-top:16px"><div class="section-head"><h3>Record review decision</h3></div><p class="muted">This creates an audit event only. It does not activate a diagnostic profile.</p><div class="form-grid">
+              <div class="field"><label for="classification-review-version">Classification version</label><select id="classification-review-version" required></select></div>
+              <div class="field"><label for="classification-review-evidence">Evidence decision</label><select id="classification-review-evidence" required><option value="CONFIRMED">Confirmed</option><option value="NEEDS_CORRECTION">Needs correction</option><option value="REJECTED">Rejected</option></select></div>
+              <div class="field"><label for="classification-review-profile">Diagnostic profile (optional)</label><select id="classification-review-profile"><option value="">Not assessed against a profile</option></select></div>
+              <div class="field"><label for="classification-review-applicability">Applicability decision</label><select id="classification-review-applicability" required><option value="NOT_ASSESSED">Not assessed</option><option value="APPLICABLE">Applicable</option><option value="NOT_APPLICABLE">Not applicable</option><option value="NEEDS_REVIEW">Needs further review</option></select></div>
+              <div class="field full"><label for="classification-review-rationale">Review rationale</label><textarea id="classification-review-rationale" maxlength="1000" rows="3" required></textarea></div>
+              <label class="field full"><span><input id="classification-review-confirmed" type="checkbox" required> I confirm I reviewed this exact classification version and any selected profile’s cited applicability.</span></label>
+              <div class="field full"><button class="primary" type="submit">Record immutable review</button></div>
+            </div></form><div class="section-head" style="margin-top:16px"><h3>Review audit history</h3><span id="classification-review-count" class="chip">0 reviews</span></div><p id="classification-review-empty" class="muted">No review decisions recorded for this animal.</p><div id="classification-review-list" class="feed-list"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -266,7 +276,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20261006-01";
+      script.src = "./src/main.js?build=20261006-02";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {
