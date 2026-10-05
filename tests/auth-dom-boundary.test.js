@@ -75,7 +75,8 @@ const context = vm.createContext({
     listMilkRecordsForDate: async () => [],
     listFinanceEntries: async () => [],
     getPendingSyncCount: async () => 1,
-    getAnimal: async () => ({ animal, photo: {} })
+    getAnimal: async () => ({ animal, photo: {} }),
+    listAnimalNutritionClassifications: async () => []
   },
   getAuthClient: async () => client,
   startSyncLoop(callback) { syncCallback = callback; },

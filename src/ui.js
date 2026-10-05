@@ -2,7 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261005-04";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261006-01";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
@@ -16,13 +16,14 @@ const $ = (selector) => document.querySelector(selector);
 let signedIn = false;
 let accessGeneration = 0;
 let selectedDiagnosticProfile = null;
+let selectedAnimalId = null;
 
 function clearFarmView() {
   feedRefreshGeneration += 1;
   ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
     "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
     "#feed-movement-form", "#feed-selection-form", "#ration-review-form", "#diagnostic-profile-form",
-    "#diagnostic-selection-form", "#diagnostic-archive-form"].forEach((selector) => {
+    "#diagnostic-selection-form", "#diagnostic-archive-form", "#animal-nutrition-classification-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -31,6 +32,10 @@ function clearFarmView() {
   $("#animal-list").replaceChildren();
   $("#animals-empty").hidden = false;
   $("#animal-profile").hidden = true;
+  selectedAnimalId = null;
+  $("#classification-list").replaceChildren();
+  $("#classification-count").textContent = "0 observations";
+  $("#classification-empty").hidden = false;
   ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
     $(selector).textContent = "";
   });
@@ -527,6 +532,23 @@ function refreshAnimalList(animals) {
   $("#animal-list").innerHTML = animals.map(animalCard).join("");
 }
 
+function labelEnum(value) {
+  return String(value || "").toLocaleLowerCase().replaceAll("_", " ");
+}
+
+function renderAnimalNutritionClassifications(rows) {
+  $("#classification-count").textContent = rows.length + (rows.length === 1 ? " observation" : " observations");
+  $("#classification-empty").hidden = rows.length > 0;
+  $("#classification-list").innerHTML = rows.map((row) => '<div class="evidence-row"><strong>Version ' +
+    escapeHtml(row.version) + " · " + escapeHtml(row.liveWeightKg) + " kg</strong><span>" +
+    escapeHtml(labelEnum(row.physiologicalStage)) + " · " + escapeHtml(labelEnum(row.lactationStatus)) +
+    (row.lactationStatus === "LACTATING" ? " / " + escapeHtml(labelEnum(row.lactationStage)) : "") +
+    " · " + escapeHtml(labelEnum(row.productionContext)) + "</span><span>Observed " + escapeHtml(row.observedAt) +
+    " · " + escapeHtml(labelEnum(row.weightMethod)) + "</span><span>Evidence: " + escapeHtml(row.sourceTitle) +
+    " — " + escapeHtml(row.sourceCitation) + "</span><span>Basis: " + escapeHtml(row.applicabilityNotes) +
+    '</span><small>Evidence observation only; no automated applicability or recommendation.</small></div>').join("");
+}
+
 async function openAnimal(animalId) {
   const generation = accessGeneration;
   if (!canShowFarmData(generation)) return;
@@ -538,6 +560,7 @@ async function openAnimal(animalId) {
   }
 
   $("#animal-profile").hidden = false;
+  selectedAnimalId = animalId;
   $("#profile-name").textContent = result.animal.animalCode;
   $("#profile-type").textContent = animalTypeLabel(result.animal.type);
   $("#profile-breed").textContent = result.animal.breed;
@@ -553,6 +576,31 @@ async function openAnimal(animalId) {
   } else {
     image.hidden = true;
   }
+  const classifications = await FarmRepository.listAnimalNutritionClassifications(animalId);
+  if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
+  renderAnimalNutritionClassifications(classifications);
+}
+
+async function handleAnimalNutritionClassificationSubmit(event) {
+  event.preventDefault();
+  const generation = accessGeneration; const form = event.currentTarget;
+  if (!selectedAnimalId) return setStatus("Choose an animal before recording classification evidence.", "error");
+  try {
+    await FarmRepository.createAnimalNutritionClassification(selectedAnimalId, {
+      observedAt: $("#classification-date").value, liveWeightKg: $("#classification-weight").value,
+      weightMethod: $("#classification-weight-method").value, physiologicalStage: $("#classification-physiology").value,
+      lactationStatus: $("#classification-lactation-status").value, lactationStage: $("#classification-lactation-stage").value,
+      productionContext: $("#classification-production-context").value, averageDailyMilkLiters: $("#classification-milk").value,
+      productionWindowDays: $("#classification-window").value, evidenceType: $("#classification-evidence-type").value,
+      sourceTitle: $("#classification-source-title").value, sourceCitation: $("#classification-citation").value,
+      sourceUrl: $("#classification-source-url").value, applicabilityNotes: $("#classification-notes").value,
+      revisionReason: $("#classification-revision-reason").value
+    });
+    if (!canShowFarmData(generation)) return;
+    form.reset(); $("#classification-date").value = toLocalDateString();
+    renderAnimalNutritionClassifications(await FarmRepository.listAnimalNutritionClassifications(selectedAnimalId));
+    setStatus("Classification evidence saved. No recommendation was activated.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
 function populateAnimalSelectors(animals) {
@@ -1051,6 +1099,7 @@ export async function initApp() {
   $("#feed-cost-date").value = toLocalDateString();
   $("#feed-batch-date").value = toLocalDateString();
   $("#feed-movement-date").value = toLocalDateString();
+  $("#classification-date").value = toLocalDateString();
   selectFinanceDirection("income");
   selectMilkSession("morning");
   $("#feed-observation-evidence").replaceChildren(...evidenceClasses.map(([value, label]) => new Option(label, value)));
@@ -1090,6 +1139,7 @@ export async function initApp() {
   $("#diagnostic-profile-form").addEventListener("submit", handleDiagnosticProfileSubmit);
   $("#diagnostic-selection-form").addEventListener("submit", handleDiagnosticSelectionSubmit);
   $("#diagnostic-archive-form").addEventListener("submit", handleDiagnosticArchiveSubmit);
+  $("#animal-nutrition-classification-form").addEventListener("submit", handleAnimalNutritionClassificationSubmit);
   $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
   $("#feed-list").addEventListener("click", (event) => {
     const row = event.target.closest("[data-feed-id]");

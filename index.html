@@ -103,6 +103,31 @@
             <div class="meta"><small>Birth date</small><strong id="profile-birth"></strong></div>
           </div><p class="muted" style="margin-top:14px">This master identity will grow into the full Animal 360 profile: productivity, breeding, calving, health, family, attachments and financial history.</p></div>
         </div>
+        <div class="grid two" style="margin-top:16px">
+          <form id="animal-nutrition-classification-form" class="card">
+            <div class="section-head"><div><p class="eyebrow">EVIDENCE ONLY</p><h3>Nutritional classification</h3></div></div>
+            <p class="muted">Record observed context. This does not match diagnostic profiles, calculate requirements or recommend a ration.</p>
+            <div class="form-grid">
+              <div class="field"><label for="classification-date">Observation date</label><input id="classification-date" type="date" required></div>
+              <div class="field"><label for="classification-weight">Live weight (kg)</label><input id="classification-weight" type="number" min="0.1" max="2500" step="0.1" required></div>
+              <div class="field"><label for="classification-weight-method">Weight evidence</label><select id="classification-weight-method" required><option value="">Select method</option><option value="SCALE_MEASURED">Scale measured</option><option value="WEIGH_TAPE_ESTIMATED">Weigh-tape estimate</option><option value="OTHER_DOCUMENTED">Other documented method</option></select></div>
+              <div class="field"><label for="classification-physiology">Physiological stage</label><select id="classification-physiology" required><option value="">Select stage</option><option value="GROWING">Growing</option><option value="MATURE_MAINTENANCE">Mature maintenance</option><option value="PREGNANT">Pregnant</option><option value="POSTPARTUM">Postpartum</option><option value="OTHER_DOCUMENTED">Other documented stage</option></select></div>
+              <div class="field"><label for="classification-lactation-status">Lactation status</label><select id="classification-lactation-status" required><option value="">Select status</option><option value="LACTATING">Lactating</option><option value="DRY">Dry</option><option value="NOT_APPLICABLE">Not applicable</option><option value="UNKNOWN_DOCUMENTED">Unknown — documented</option></select></div>
+              <div class="field"><label for="classification-lactation-stage">Lactation stage</label><select id="classification-lactation-stage" required><option value="NOT_APPLICABLE">Not applicable</option><option value="EARLY">Early</option><option value="MID">Mid</option><option value="LATE">Late</option><option value="OTHER_DOCUMENTED">Other documented stage</option></select></div>
+              <div class="field"><label for="classification-production-context">Production context</label><select id="classification-production-context" required><option value="">Select context</option><option value="DAIRY">Dairy</option><option value="BEEF_GROWING">Beef growing</option><option value="BEEF_FINISHING">Beef finishing</option><option value="BREEDING">Breeding</option><option value="MAINTENANCE">Maintenance</option><option value="OTHER_DOCUMENTED">Other documented context</option></select></div>
+              <div class="field"><label for="classification-milk">Average daily milk (L, optional)</label><input id="classification-milk" type="number" min="0" max="150" step="0.1"></div>
+              <div class="field"><label for="classification-window">Milk observation window (days)</label><input id="classification-window" type="number" min="1" max="365" step="1"></div>
+              <div class="field"><label for="classification-evidence-type">Evidence type</label><select id="classification-evidence-type" required><option value="">Select evidence</option><option value="DIRECT_MEASUREMENT">Direct measurement</option><option value="FARM_RECORD">Farm record</option><option value="VETERINARY_ASSESSMENT">Veterinary assessment</option><option value="DOCUMENTED_GUIDANCE">Documented guidance</option><option value="OTHER_DOCUMENTED">Other documented evidence</option></select></div>
+              <div class="field full"><label for="classification-source-title">Evidence source title</label><input id="classification-source-title" maxlength="200" required></div>
+              <div class="field full"><label for="classification-citation">Citation or farm reference</label><input id="classification-citation" maxlength="500" required></div>
+              <div class="field full"><label for="classification-source-url">HTTPS evidence link (optional)</label><input id="classification-source-url" type="url" maxlength="1000"></div>
+              <div class="field full"><label for="classification-notes">Classification basis and limitations</label><textarea id="classification-notes" maxlength="1000" rows="3" required></textarea></div>
+              <div class="field full"><label for="classification-revision-reason">Revision reason (required after version 1)</label><input id="classification-revision-reason" maxlength="500"></div>
+              <div class="field full"><button class="primary" type="submit">Save evidence observation</button></div>
+            </div>
+          </form>
+          <div class="card"><div class="section-head"><h3>Classification history</h3><span id="classification-count" class="chip">0 observations</span></div><p id="classification-empty" class="muted">No classification evidence recorded for this animal.</p><div id="classification-list" class="feed-list"></div></div>
+        </div>
       </div>
     </section>
 
@@ -241,7 +266,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20261005-04";
+      script.src = "./src/main.js?build=20261006-01";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {
