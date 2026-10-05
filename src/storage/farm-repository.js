@@ -135,7 +135,7 @@ export async function listAnimals() {
 export async function getAnimal(animalId) {
   const animal = await get("animals", animalId);
   if (!animal || animal.farmId !== requireFarm()) return null;
-  const attachment = await get("attachments", animal.photoAttachmentId);
+  const attachment = animal.photoAttachmentId ? await get("attachments", animal.photoAttachmentId) : null;
   return { animal, photo: attachment?.farmId === requireFarm() ? attachment.blob : null };
 }
 
