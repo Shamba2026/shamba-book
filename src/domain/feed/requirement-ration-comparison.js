@@ -20,6 +20,17 @@ function finite(value, label) {
 
 function rounded(value) { return Number(value.toFixed(6)); }
 
+const REVIEW_DECISIONS = new Set(["ACKNOWLEDGED", "NEEDS_EVIDENCE_REVIEW", "NOT_APPLICABLE"]);
+
+export function validateComparisonReview(input) {
+  if (!REVIEW_DECISIONS.has(input?.decision)) throw new Error("Select a supported comparison review decision.");
+  const rationale = requiredText(input?.rationale, "Review rationale");
+  if (rationale.length < 10 || rationale.length > 1000) throw new Error("Review rationale must be between 10 and 1000 characters.");
+  const reviewerUserId = requiredText(input?.reviewerUserId, "Reviewer user ID");
+  if (input?.reviewerConfirmed !== true) throw new Error("Reviewer must confirm the exact evidence comparison.");
+  return Object.freeze({ decision: input.decision, rationale, reviewerUserId });
+}
+
 export function compareRequirementToRationEvidence(requirement, rationReview, animalId) {
   const targetAnimalId = requiredText(animalId, "Animal ID");
   if (!requirement || !rationReview) throw new Error("Requirement and ration evidence are required.");

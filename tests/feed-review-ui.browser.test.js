@@ -203,6 +203,12 @@ try {
   await page.locator('#requirement-ration-comparison-form button[type="submit"]').click();
   await page.locator('#requirement-ration-comparison-result:has-text("Below documented requirement")').waitFor();
   assert.match(await page.locator("#requirement-ration-comparison-result").textContent(), /no adequacy judgment or feed recommendation/i);
+  await page.locator("#requirement-ration-review-decision").selectOption("NEEDS_EVIDENCE_REVIEW");
+  await page.locator("#requirement-ration-review-rationale").fill("Synthetic human review requires additional ration evidence.");
+  await page.locator("#requirement-ration-review-confirmed").check();
+  await page.locator('#requirement-ration-review-form button[type="submit"]').click();
+  await page.locator('#requirement-ration-review-list:has-text("Synthetic human review requires additional ration evidence")').waitFor();
+  assert.equal((await rows(page, "nutrition_requirement_ration_reviews")).length, 1);
   assert.equal((await rows(page, "feed_inventory_movements")).length, 1, "comparison must not consume inventory");
   assert.equal((await rows(page, "sync_queue")).length, 0, "comparison must not queue a cloud write");
   assert.equal(await page.locator("#requirement-calculation-form").isVisible(), false, "revoked profile must not remain calculable");
@@ -213,6 +219,7 @@ try {
   await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
   await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
   await page.locator('#classification-review-list:has-text("Synthetic explicit classification and applicability review")').waitFor();
+  await page.locator('#requirement-ration-review-list:has-text("Synthetic human review requires additional ration evidence")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor(); await page.waitForTimeout(100);
   assert.equal(await page.locator("#feed-list").textContent(), ""); assert.equal(await page.locator("#feed-source-list").textContent(), ""); assert.equal(await page.locator("#feed-profile").textContent(), "");
   assert.equal(await page.locator("#feed-cost-source-list").textContent(), ""); assert.equal(await page.locator("#feed-inventory-list").textContent(), "");
@@ -228,6 +235,7 @@ try {
   assert.equal(await page.locator("#requirement-applicability-list").textContent(), "");
   assert.equal(await page.locator("#requirement-calculation-list").textContent(), "");
   assert.equal(await page.locator("#requirement-ration-comparison-result").textContent(), "");
+  assert.equal(await page.locator("#requirement-ration-review-list").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);

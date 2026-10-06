@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -178,6 +178,15 @@ export function openLocalDatabase() {
         store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("profileId", "profileId", { unique: false });
         store.createIndex("animalId", "animalId", { unique: false }); store.createIndex("classificationId", "classificationId", { unique: false });
         store.createIndex("reviewedAt", "reviewedAt", { unique: false });
+      }
+      // Version 12 stores immutable human review of a source-attributed
+      // requirement/ration comparison. It does not alter rations, inventory,
+      // farm records, the sync queue or cloud state.
+      if (!db.objectStoreNames.contains("nutrition_requirement_ration_reviews")) {
+        const store = db.createObjectStore("nutrition_requirement_ration_reviews", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("animalId", "animalId", { unique: false });
+        store.createIndex("requirementCalculationId", "requirementCalculationId", { unique: false });
+        store.createIndex("rationReviewId", "rationReviewId", { unique: false }); store.createIndex("reviewedAt", "reviewedAt", { unique: false });
       }
     };
 

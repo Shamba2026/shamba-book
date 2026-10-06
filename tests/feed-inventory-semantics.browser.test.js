@@ -133,7 +133,7 @@ try {
       archivedSelectionDeactivated, profileHistory, warningHistory,
       records, queue, selectionEvents };
   });
-  assert.equal(result.upgraded.version, 11); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
+  assert.equal(result.upgraded.version, 12); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
   assert.equal(result.upgraded.stores.includes("feed_diagnostic_warning_events"), true);
   assert.equal(result.upgraded.stores.includes("feed_diagnostic_profile_selections"), true);
   assert.equal(result.upgraded.stores.includes("feed_nutrition_selections"), true); assert.equal(result.preserved.photo, "PRESERVED-PHOTO");

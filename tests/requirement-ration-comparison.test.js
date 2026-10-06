@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { compareRequirementToRationEvidence } from "../src/domain/feed/requirement-ration-comparison.js";
+import { compareRequirementToRationEvidence, validateComparisonReview } from "../src/domain/feed/requirement-ration-comparison.js";
 
 const requirement = Object.freeze({ id: "req-1", farmId: "farm-1", animalId: "animal-1", profileId: "rp-1",
   profileVersion: 2, sourceCitation: "Requirement source p. 8", classificationId: "class-1",
@@ -35,5 +35,12 @@ assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration,
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, rationBasisConfirmed: false }, "animal-1"), /daily offered ration/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, rationBasis: undefined }, "animal-1"), /daily offered ration/);
 assert.throws(() => compareRequirementToRationEvidence({ ...requirement, outputs: [{ outputCode: "DMI_KG_DAY", outputUnit: "kg/day", value: 10 }] }, ration, "animal-1"), /unit/);
+
+assert.deepEqual(validateComparisonReview({ decision: "ACKNOWLEDGED", rationale: "Reviewed source-attributed arithmetic gaps.",
+  reviewerUserId: "reviewer-1", reviewerConfirmed: true }), {
+  decision: "ACKNOWLEDGED", rationale: "Reviewed source-attributed arithmetic gaps.", reviewerUserId: "reviewer-1"
+});
+assert.throws(() => validateComparisonReview({ decision: "APPROVED", rationale: "Not supported", reviewerUserId: "r", reviewerConfirmed: true }), /decision/);
+assert.throws(() => validateComparisonReview({ decision: "NEEDS_EVIDENCE_REVIEW", rationale: "Further evidence review is required.", reviewerUserId: "r", reviewerConfirmed: false }), /confirm/);
 
 console.log("requirement-ration-comparison.test.js: PASS");
