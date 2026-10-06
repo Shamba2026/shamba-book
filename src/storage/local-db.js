@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -153,6 +153,23 @@ export function openLocalDatabase() {
         store.createIndex("classificationId", "classificationId", { unique: false });
         store.createIndex("profileId", "profileId", { unique: false });
         store.createIndex("reviewedAt", "reviewedAt", { unique: false });
+      }
+      // Version 10 adds sourced requirement equations, immutable approvals and
+      // calculation audits. These stores never mutate inventory or sync state.
+      if (!db.objectStoreNames.contains("nutrition_requirement_profiles")) {
+        const store = db.createObjectStore("nutrition_requirement_profiles", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("animalClass", "animalClass", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("nutrition_requirement_profile_reviews")) {
+        const store = db.createObjectStore("nutrition_requirement_profile_reviews", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("profileId", "profileId", { unique: false });
+        store.createIndex("reviewedAt", "reviewedAt", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("nutrition_requirement_calculations")) {
+        const store = db.createObjectStore("nutrition_requirement_calculations", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("animalId", "animalId", { unique: false });
+        store.createIndex("calculatedAt", "calculatedAt", { unique: false });
       }
     };
 
