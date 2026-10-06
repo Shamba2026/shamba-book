@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -143,6 +143,16 @@ export function openLocalDatabase() {
         store.createIndex("animalId", "animalId", { unique: false });
         store.createIndex("animalVersion", ["animalId", "version"], { unique: true });
         store.createIndex("observedAt", "observedAt", { unique: false });
+      }
+      // Version 9 adds immutable reviewer decisions. These audit events do not
+      // activate diagnostic profiles or create farm records, queue or cloud rows.
+      if (!db.objectStoreNames.contains("animal_nutrition_classification_reviews")) {
+        const store = db.createObjectStore("animal_nutrition_classification_reviews", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false });
+        store.createIndex("animalId", "animalId", { unique: false });
+        store.createIndex("classificationId", "classificationId", { unique: false });
+        store.createIndex("profileId", "profileId", { unique: false });
+        store.createIndex("reviewedAt", "reviewedAt", { unique: false });
       }
     };
 
