@@ -32,6 +32,8 @@ assert.ok(Object.isFrozen(report));
 
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, farmId: "farm-2" }, "animal-1"), /same farm/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, animalGroup: [] }, "animal-1"), /animal group/);
+assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration,
+  animalGroup: [{ id: "animal-1" }, { id: "animal-2" }] }, "animal-1"), /single animal/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, rationBasisConfirmed: false }, "animal-1"), /daily offered ration/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, rationBasis: undefined }, "animal-1"), /daily offered ration/);
 assert.throws(() => compareRequirementToRationEvidence({ ...requirement, outputs: [{ outputCode: "DMI_KG_DAY", outputUnit: "kg/day", value: 10 }] }, ration, "animal-1"), /unit/);
