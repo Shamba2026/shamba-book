@@ -110,6 +110,7 @@ try {
   await page.locator("#diagnostic-cp").fill("14"); await page.locator('#diagnostic-profile-form button[type="submit"]').click();
   await page.locator('#diagnostic-profile-list:has-text("TEST-DIAGNOSTIC-CITATION-001")').waitFor();
   assert.match(await page.locator("#diagnostic-current-selection").textContent(), /warnings are inactive/i);
+  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor();
   await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
   await page.locator("#animal-profile:visible").waitFor();
   await page.locator("#classification-date").fill("2026-10-05"); await page.locator("#classification-weight").fill("480");
