@@ -61,15 +61,19 @@ try {
       applicabilityDecision: "APPLICABLE", reviewerUserId: "reviewer-a", reviewerConfirmed: true,
       rationale: "Synthetic evidence and applicability reviewed explicitly" });
     const noActivation = await repository.getSelectedDiagnosticProfile();
+    await repository.selectDiagnosticProfile(profile.id, { rationale: "Explicitly supported activation",
+      animalIds: ["cow-a"], applicabilityConfirmed: true });
+    const activated = await repository.getSelectedDiagnosticProfile();
     const concurrent = await Promise.allSettled([483, 484].map((liveWeightKg) => repository.createAnimalNutritionClassification("cow-a",
       { ...input, liveWeightKg, revisionReason: "Concurrent synthetic scale measurement" })));
+    const staleClassificationDeactivated = await repository.getSelectedDiagnosticProfile() === null;
     const history = await repository.listAnimalNutritionClassifications("cow-a");
     const reviews = await repository.listAnimalNutritionClassificationReviews("cow-a");
     repository.setActiveFarm("farm-b"); const hidden = (await repository.listAnimalNutritionClassifications("cow-a")).length === 0;
     const reviewsHidden = (await repository.listAnimalNutritionClassificationReviews("cow-a")).length === 0;
     let foreignRejected = false; try { await repository.createAnimalNutritionClassification("cow-a", input); } catch { foreignRejected = true; }
     const records = await localDb.getAll("records"); const queue = await localDb.getAll("sync_queue");
-    return { upgraded, rollbackRejected, rolledBack, v1, v2, profile, review, noActivation, supersededApplicableRejected,
+    return { upgraded, rollbackRejected, rolledBack, v1, v2, profile, review, noActivation, activated, staleClassificationDeactivated, supersededApplicableRejected,
       concurrent: concurrent.map((row) => row.status), history, reviews, hidden, reviewsHidden, foreignRejected, records, queue };
   });
   assert.equal(result.upgraded.version, 9); assert.equal(result.upgraded.stores.includes("animal_nutrition_classifications"), true);
@@ -80,7 +84,9 @@ try {
   assert.equal(result.v1.version, 1); assert.equal(result.v2.version, 2); assert.equal(result.v2.supersedesClassificationId, result.v1.id);
   assert.deepEqual(result.concurrent.sort(), ["fulfilled", "rejected"]); assert.equal(result.history.length, 3); assert.equal(result.history[0].version, 3);
   assert.equal(result.review.classificationId, result.v2.id); assert.equal(result.review.profileId, result.profile.id);
-  assert.equal(result.noActivation, null); assert.equal(result.supersededApplicableRejected, true); assert.equal(result.reviews.length, 1);
+  assert.equal(result.noActivation, null); assert.equal(result.activated.profile.id, result.profile.id);
+  assert.equal(result.activated.selection.classificationEvidence[0].reviewId, result.review.id);
+  assert.equal(result.staleClassificationDeactivated, true); assert.equal(result.supersededApplicableRejected, true); assert.equal(result.reviews.length, 1);
   assert.equal(result.hidden, true); assert.equal(result.reviewsHidden, true); assert.equal(result.foreignRejected, true);
   assert.equal(result.records.length, 0); assert.equal(result.queue.length, 0);
   console.log("animal-nutrition-classification.browser.test.js: PASS");
