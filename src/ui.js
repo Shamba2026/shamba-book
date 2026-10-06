@@ -2,7 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261006-03";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261006-04";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
@@ -25,7 +25,8 @@ function clearFarmView() {
     "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
     "#feed-movement-form", "#feed-selection-form", "#ration-review-form", "#diagnostic-profile-form",
     "#diagnostic-selection-form", "#diagnostic-archive-form", "#animal-nutrition-classification-form",
-    "#animal-nutrition-review-form"].forEach((selector) => {
+    "#animal-nutrition-review-form", "#requirement-profile-form", "#requirement-approval-form",
+    "#requirement-revocation-form", "#requirement-applicability-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -44,6 +45,10 @@ function clearFarmView() {
   $("#animal-nutrition-review-form").hidden = true;
   $("#classification-review-version").replaceChildren();
   $("#classification-review-profile").replaceChildren();
+  $("#requirement-applicability-list").replaceChildren();
+  $("#requirement-applicability-count").textContent = "0 reviews";
+  $("#requirement-applicability-empty").hidden = false;
+  $("#requirement-applicability-form").hidden = true;
   ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
     $(selector).textContent = "";
   });
@@ -69,7 +74,8 @@ function clearFarmView() {
   selectedFeedId = null;
   ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list",
     "#feed-movement-list", "#feed-current-selections", "#ration-review-rows", "#ration-review-result",
-    "#diagnostic-profile-list", "#diagnostic-current-selection", "#diagnostic-history-list"].forEach((selector) => $(selector).replaceChildren());
+    "#diagnostic-profile-list", "#diagnostic-current-selection", "#diagnostic-history-list",
+    "#requirement-profile-list", "#requirement-review-list"].forEach((selector) => $(selector).replaceChildren());
   selectedDiagnosticProfile = null;
   $("#diagnostic-profile-count").textContent = "0 profiles";
   $("#diagnostic-profile-empty").hidden = false;
@@ -77,9 +83,16 @@ function clearFarmView() {
   $("#diagnostic-archive-form").hidden = true;
   $("#diagnostic-history-count").textContent = "0 reviews";
   $("#diagnostic-history-empty").hidden = false;
+  $("#requirement-profile-count").textContent = "0 profiles";
+  $("#requirement-profile-empty").hidden = false;
+  $("#requirement-review-count").textContent = "0 reviews";
+  $("#requirement-approval-form").hidden = true;
+  $("#requirement-revocation-form").hidden = true;
   ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source",
     "#feed-movement-batch", "#feed-selection-observation", "#diagnostic-selection-profile",
-    "#diagnostic-selection-animals", "#diagnostic-archive-profile", "#diagnostic-supersedes"].forEach((selector) => $(selector).replaceChildren());
+    "#diagnostic-selection-animals", "#diagnostic-archive-profile", "#diagnostic-supersedes",
+    "#requirement-approval-profile", "#requirement-revocation-profile", "#requirement-applicability-profile",
+    "#requirement-applicability-classification"].forEach((selector) => $(selector).replaceChildren());
   $("#feed-count").textContent = "0 feeds";
   $("#feed-source-count").textContent = "0 sources";
   $("#feed-cost-source-count").textContent = "0 sources";
@@ -271,6 +284,72 @@ function renderDiagnosticProfiles(profiles, selected, animals, history) {
   renderDiagnosticHistory(history);
 }
 
+const requirementUnits = { DMI_KG_DAY: "kg DM/day", ME_MJ_DAY: "MJ ME/day", NEL_MCAL_DAY: "Mcal NEL/day",
+  CP_KG_DAY: "kg CP/day", MP_G_DAY: "g MP/day" };
+
+function renderRequirementProfiles(profiles, reviews) {
+  $("#requirement-profile-count").textContent = profiles.length + (profiles.length === 1 ? " profile" : " profiles");
+  $("#requirement-profile-empty").hidden = profiles.length > 0;
+  $("#requirement-profile-list").innerHTML = profiles.map((profile) => '<div class="evidence-row"><strong>' +
+    escapeHtml(profile.name + " v" + profile.version) + '</strong><small>' + escapeHtml(labelEnum(profile.animalClass)) +
+    ' · ' + escapeHtml(profile.nutrientSystem) + ' · status: ' + escapeHtml(profile.status) + '</small><small>' +
+    escapeHtml(profile.sourceTitle + " — " + profile.sourceCitation) + '</small><small>' + escapeHtml(profile.applicability) +
+    '</small><small>Equations: ' + escapeHtml(profile.equations.map((row) => row.outputCode + " · " + row.equationReference).join("; ")) +
+    '</small></div>').join("");
+  const drafts = profiles.filter((row) => row.status === "draft"); const approved = profiles.filter((row) => row.status === "approved");
+  $("#requirement-approval-form").hidden = drafts.length === 0; $("#requirement-revocation-form").hidden = approved.length === 0;
+  $("#requirement-approval-profile").replaceChildren(new Option("Choose a draft", ""), ...drafts.map((row) => new Option(row.name + " v" + row.version, row.id)));
+  $("#requirement-revocation-profile").replaceChildren(new Option("Choose an approved profile", ""), ...approved.map((row) => new Option(row.name + " v" + row.version, row.id)));
+  $("#requirement-review-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
+  $("#requirement-review-list").innerHTML = reviews.map((row) => '<div class="evidence-row"><strong>' +
+    escapeHtml(row.decision + " · v" + row.profileVersion) + '</strong><small>' + escapeHtml(row.rationale) +
+    '</small><small>' + escapeHtml(row.reviewedAt) + ' · immutable audit event</small></div>').join("");
+}
+
+function requirementTermsFromForm() {
+  const terms = []; const constant = $("#requirement-constant").value; const weight = $("#requirement-weight-coefficient").value;
+  const milk = $("#requirement-milk-coefficient").value;
+  if (constant !== "") terms.push({ factor: "CONSTANT", coefficient: constant, exponent: 0 });
+  if (weight !== "") terms.push({ factor: "LIVE_WEIGHT_KG", coefficient: weight, exponent: $("#requirement-weight-exponent").value });
+  if (milk !== "") terms.push({ factor: "AVERAGE_DAILY_MILK_LITERS", coefficient: milk, exponent: $("#requirement-milk-exponent").value });
+  return terms;
+}
+
+async function handleRequirementProfileSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget; const outputCode = $("#requirement-output").value;
+  try { await FarmRepository.createNutritionRequirementProfile({ name: $("#requirement-name").value,
+      version: $("#requirement-version").value, animalClass: $("#requirement-animal-class").value,
+      nutrientSystem: $("#requirement-system").value, publicationYear: $("#requirement-year").value,
+      applicability: $("#requirement-applicability").value, sourceTitle: $("#requirement-source-title").value,
+      sourceCitation: $("#requirement-citation").value, sourceUrl: $("#requirement-url").value,
+      supersessionRationale: $("#requirement-supersession-rationale").value,
+      equations: [{ outputCode, outputUnit: requirementUnits[outputCode], equationReference: $("#requirement-equation-reference").value,
+        terms: requirementTermsFromForm() }] });
+    if (!canShowFarmData(generation)) return; form.reset(); $("#requirement-weight-exponent").value = "1"; $("#requirement-milk-exponent").value = "1";
+    await refreshFeedWorkspace(generation); setStatus("Requirement profile saved as an inactive draft.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleRequirementApprovalSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
+  try { await FarmRepository.approveNutritionRequirementProfile($("#requirement-approval-profile").value,
+      { reviewerUserId: activeUserId, rationale: $("#requirement-approval-rationale").value,
+        reviewerConfirmed: $("#requirement-approval-confirmed").checked });
+    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
+    setStatus("Requirement profile approved. No recommendation was generated.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleRequirementRevocationSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
+  try { await FarmRepository.revokeNutritionRequirementProfile($("#requirement-revocation-profile").value,
+      { reviewerUserId: activeUserId, rationale: $("#requirement-revocation-rationale").value,
+        reviewerConfirmed: $("#requirement-revocation-confirmed").checked });
+    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
+    setStatus("Requirement profile revoked; audit history retained.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
 async function handleDiagnosticProfileSubmit(event) {
   event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
   try {
@@ -348,10 +427,12 @@ async function renderNutritionProfile(feedId, generation = accessGeneration) {
 async function refreshFeedWorkspace(generation = accessGeneration) {
   const refreshGeneration = ++feedRefreshGeneration;
   if (!canShowFarmData(generation)) return;
-  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, animals] = await Promise.all([FarmRepository.listFeeds(),
+  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, animals,
+    requirementProfiles, requirementReviews] = await Promise.all([FarmRepository.listFeeds(),
     FarmRepository.listNutritionSources(), FarmRepository.listFeedCostSources(), FarmRepository.listFeedInventoryBatches(),
     FarmRepository.listDiagnosticProfiles({ includeArchived: true }), FarmRepository.getSelectedDiagnosticProfile(),
-    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listAnimals()]);
+    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listAnimals(),
+    FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }), FarmRepository.listNutritionRequirementProfileReviews()]);
   if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
   const selectionRows = await Promise.all(feeds.map(async (feed) => [feed.id, await FarmRepository.getNutritionSelections(feed.id)]));
   if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
@@ -395,6 +476,7 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   renderRationReview(batches, selectionsByFeed);
   renderDiagnosticProfiles(diagnosticProfiles, diagnosticSelection,
     animals.filter((animal) => ["active", "dry"].includes(animal.status)), diagnosticHistory);
+  renderRequirementProfiles(requirementProfiles, requirementReviews);
   if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
   if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
   await renderNutritionProfile(selectedFeedId, generation);
@@ -572,6 +654,21 @@ function renderAnimalNutritionReviews(classifications, reviews, profiles) {
     ' · immutable audit event · no profile activation</small></div>').join("");
 }
 
+function renderRequirementApplicability(classifications, profiles, reviews) {
+  const latest = classifications[0]; const approved = profiles.filter((row) => row.status === "approved");
+  $("#requirement-applicability-form").hidden = !latest || approved.length === 0;
+  $("#requirement-applicability-profile").replaceChildren(new Option("Choose an approved profile", ""),
+    ...approved.map((row) => new Option(row.name + " v" + row.version + " · " + labelEnum(row.animalClass), row.id)));
+  $("#requirement-applicability-classification").replaceChildren(...(latest ?
+    [new Option("Version " + latest.version + " · " + latest.observedAt + " · " + latest.liveWeightKg + " kg", latest.id)] : []));
+  $("#requirement-applicability-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
+  $("#requirement-applicability-empty").hidden = reviews.length > 0;
+  $("#requirement-applicability-list").innerHTML = reviews.map((row) => '<div class="evidence-row"><strong>' +
+    escapeHtml(row.profileName + " v" + row.profileVersion + " · " + labelEnum(row.decision)) + '</strong><span>Classification v' +
+    escapeHtml(row.classificationVersion) + ' · ' + escapeHtml(row.rationale) + '</span><small>' + escapeHtml(row.reviewedAt) +
+    ' · immutable applicability decision · no recommendation</small></div>').join("");
+}
+
 async function openAnimal(animalId) {
   const generation = accessGeneration;
   if (!canShowFarmData(generation)) return;
@@ -599,11 +696,14 @@ async function openAnimal(animalId) {
   } else {
     image.hidden = true;
   }
-  const [classifications, reviews, profiles] = await Promise.all([FarmRepository.listAnimalNutritionClassifications(animalId),
-    FarmRepository.listAnimalNutritionClassificationReviews(animalId), FarmRepository.listDiagnosticProfiles({ includeArchived: false })]);
+  const [classifications, reviews, profiles, requirementProfiles, applicabilityReviews] = await Promise.all([
+    FarmRepository.listAnimalNutritionClassifications(animalId), FarmRepository.listAnimalNutritionClassificationReviews(animalId),
+    FarmRepository.listDiagnosticProfiles({ includeArchived: false }), FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }),
+    FarmRepository.listNutritionRequirementApplicabilityReviews(animalId)]);
   if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
   renderAnimalNutritionClassifications(classifications);
   renderAnimalNutritionReviews(classifications, reviews, profiles);
+  renderRequirementApplicability(classifications, requirementProfiles, applicabilityReviews);
 }
 
 async function handleAnimalNutritionClassificationSubmit(event) {
@@ -642,6 +742,18 @@ async function handleAnimalNutritionReviewSubmit(event) {
     if (!canShowFarmData(generation)) return;
     form.reset(); await openAnimal(selectedAnimalId);
     setStatus("Classification review recorded. No diagnostic profile was activated.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
+}
+
+async function handleRequirementApplicabilitySubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget; const animalId = selectedAnimalId;
+  if (!animalId || !activeUserId) return setStatus("Authenticated applicability review is unavailable.", "error");
+  try { await FarmRepository.reviewNutritionRequirementApplicability($("#requirement-applicability-profile").value,
+      $("#requirement-applicability-classification").value, { decision: $("#requirement-applicability-decision").value,
+        rationale: $("#requirement-applicability-rationale").value, reviewerUserId: activeUserId,
+        reviewerConfirmed: $("#requirement-applicability-confirmed").checked });
+    if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return; form.reset(); await openAnimal(animalId);
+    setStatus("Requirement applicability decision recorded. No recommendation was generated.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
@@ -1180,8 +1292,12 @@ export async function initApp() {
   $("#diagnostic-profile-form").addEventListener("submit", handleDiagnosticProfileSubmit);
   $("#diagnostic-selection-form").addEventListener("submit", handleDiagnosticSelectionSubmit);
   $("#diagnostic-archive-form").addEventListener("submit", handleDiagnosticArchiveSubmit);
+  $("#requirement-profile-form").addEventListener("submit", handleRequirementProfileSubmit);
+  $("#requirement-approval-form").addEventListener("submit", handleRequirementApprovalSubmit);
+  $("#requirement-revocation-form").addEventListener("submit", handleRequirementRevocationSubmit);
   $("#animal-nutrition-classification-form").addEventListener("submit", handleAnimalNutritionClassificationSubmit);
   $("#animal-nutrition-review-form").addEventListener("submit", handleAnimalNutritionReviewSubmit);
+  $("#requirement-applicability-form").addEventListener("submit", handleRequirementApplicabilitySubmit);
   $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
   $("#feed-list").addEventListener("click", (event) => {
     const row = event.target.closest("[data-feed-id]");

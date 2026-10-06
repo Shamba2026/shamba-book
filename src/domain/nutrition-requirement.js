@@ -1,6 +1,7 @@
 const ANIMAL_CLASSES = new Set(["LACTATING_DAIRY_COW", "DRY_DAIRY_COW", "GROWING_BEEF", "FINISHING_BEEF", "BREEDING_BEEF", "OTHER_DOCUMENTED"]);
 const FACTORS = new Set(["CONSTANT", "LIVE_WEIGHT_KG", "AVERAGE_DAILY_MILK_LITERS"]);
 const OUTPUTS = new Map([["DMI_KG_DAY", "kg DM/day"], ["ME_MJ_DAY", "MJ ME/day"], ["NEL_MCAL_DAY", "Mcal NEL/day"], ["CP_KG_DAY", "kg CP/day"], ["MP_G_DAY", "g MP/day"]]);
+const APPLICABILITY_DECISIONS = new Set(["APPLICABLE", "NOT_APPLICABLE", "NEEDS_REVIEW"]);
 
 function text(value, label, max) { const result = String(value || "").trim().replace(/\s+/g, " ");
   if (!result || result.length > max) throw new Error(`${label} is required and must be at most ${max} characters.`); return result; }
@@ -27,11 +28,15 @@ export function validateRequirementProfile(input) {
   }) : [];
   if (!equations.length) throw new Error("At least one sourced requirement equation is required.");
   if (new Set(equations.map((row) => row.outputCode)).size !== equations.length) throw new Error("A profile cannot repeat a requirement output.");
+  const supersessionRationale = String(input?.supersessionRationale || "").trim().replace(/\s+/g, " ") || null;
+  if (supersessionRationale?.length > 1000) throw new Error("Supersession rationale must be at most 1000 characters.");
   return Object.freeze({ name: text(input?.name, "Profile name", 120), version: positiveInteger(input?.version, "Profile version"),
     animalClass: input.animalClass, applicability: text(input?.applicability, "Applicability and limitations", 1000),
     nutrientSystem: text(input?.nutrientSystem, "Nutrient system", 120), sourceTitle: text(input?.sourceTitle, "Source title", 200),
     sourceCitation: text(input?.sourceCitation, "Source citation", 500), sourceUrl,
-    publicationYear: positiveInteger(input?.publicationYear, "Publication year", new Date().getUTCFullYear()), equations: Object.freeze(equations) });
+    publicationYear: positiveInteger(input?.publicationYear, "Publication year", new Date().getUTCFullYear()),
+    supersessionRationale,
+    equations: Object.freeze(equations) });
 }
 
 export function validateRequirementApproval(input) {
@@ -40,13 +45,30 @@ export function validateRequirementApproval(input) {
     rationale: text(input?.rationale, "Approval rationale", 1000), reviewerConfirmed: true });
 }
 
-export function calculateRequirements({ profile, approval, animal, classification, classificationReview, confirmed }) {
+export function validateRequirementReview(input, action) {
+  if (!new Set(["REVOKED"]).has(action)) throw new Error("Unsupported requirement-profile review action.");
+  if (input?.reviewerConfirmed !== true) throw new Error("Reviewer confirmation is required.");
+  return Object.freeze({ reviewerUserId: text(input?.reviewerUserId, "Authenticated reviewer", 100),
+    rationale: text(input?.rationale, "Review rationale", 1000), reviewerConfirmed: true });
+}
+
+export function validateRequirementApplicability(input) {
+  if (!APPLICABILITY_DECISIONS.has(input?.decision)) throw new Error("Select a valid applicability decision.");
+  if (input?.reviewerConfirmed !== true) throw new Error("Reviewer confirmation is required.");
+  return Object.freeze({ decision: input.decision, reviewerUserId: text(input?.reviewerUserId, "Authenticated reviewer", 100),
+    rationale: text(input?.rationale, "Applicability rationale", 1000), reviewerConfirmed: true });
+}
+
+export function calculateRequirements({ profile, approval, applicabilityReview, animal, classification, classificationReview, confirmed }) {
   if (profile?.status !== "approved" || approval?.profileId !== profile.id || approval?.reviewerConfirmed !== true)
     throw new Error("An explicitly approved requirement profile is required.");
   if (confirmed !== true) throw new Error("Explicit calculation confirmation is required.");
   if (!animal || classification?.animalId !== animal.id || classificationReview?.classificationId !== classification.id ||
       classificationReview?.evidenceDecision !== "CONFIRMED" || classificationReview?.reviewerConfirmed !== true)
     throw new Error("A confirmed review of the selected animal classification is required.");
+  if (applicabilityReview?.profileId !== profile.id || applicabilityReview?.classificationId !== classification.id ||
+      applicabilityReview?.decision !== "APPLICABLE" || applicabilityReview?.reviewerConfirmed !== true)
+    throw new Error("Explicit applicability approval for this exact profile and classification is required.");
   const inputs = { LIVE_WEIGHT_KG: Number(classification.liveWeightKg),
     AVERAGE_DAILY_MILK_LITERS: classification.averageDailyMilkLiters == null ? null : Number(classification.averageDailyMilkLiters) };
   const outputs = profile.equations.map((equation) => { const value = equation.terms.reduce((sum, term) => {
@@ -56,7 +78,8 @@ export function calculateRequirements({ profile, approval, animal, classificatio
     if (!Number.isFinite(value) || value < 0) throw new Error("Requirement equation produced an invalid result.");
     return Object.freeze({ outputCode: equation.outputCode, outputUnit: equation.outputUnit, value: Number(value.toFixed(6)), equationReference: equation.equationReference }); });
   return Object.freeze({ profileId: profile.id, profileVersion: profile.version, approvalId: approval.id, animalId: animal.id,
-    classificationId: classification.id, classificationReviewId: classificationReview.id, inputs: Object.freeze(inputs), outputs: Object.freeze(outputs) });
+    classificationId: classification.id, classificationReviewId: classificationReview.id,
+    applicabilityReviewId: applicabilityReview.id, inputs: Object.freeze(inputs), outputs: Object.freeze(outputs) });
 }
 
 export const requirementOutputUnits = Object.freeze(Object.fromEntries(OUTPUTS));

@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -170,6 +170,14 @@ export function openLocalDatabase() {
         const store = db.createObjectStore("nutrition_requirement_calculations", { keyPath: "id" });
         store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("animalId", "animalId", { unique: false });
         store.createIndex("calculatedAt", "calculatedAt", { unique: false });
+      }
+      // Version 11 stores immutable, explicit profile-to-classification
+      // applicability decisions. It does not select a ration or consume stock.
+      if (!db.objectStoreNames.contains("nutrition_requirement_applicability_reviews")) {
+        const store = db.createObjectStore("nutrition_requirement_applicability_reviews", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("profileId", "profileId", { unique: false });
+        store.createIndex("animalId", "animalId", { unique: false }); store.createIndex("classificationId", "classificationId", { unique: false });
+        store.createIndex("reviewedAt", "reviewedAt", { unique: false });
       }
     };
 

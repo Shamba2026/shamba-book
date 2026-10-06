@@ -76,7 +76,7 @@ try {
     return { upgraded, rollbackRejected, rolledBack, v1, v2, profile, review, noActivation, activated, staleClassificationDeactivated, supersededApplicableRejected,
       concurrent: concurrent.map((row) => row.status), history, reviews, hidden, reviewsHidden, foreignRejected, records, queue };
   });
-  assert.equal(result.upgraded.version, 10); assert.equal(result.upgraded.stores.includes("animal_nutrition_classifications"), true);
+  assert.equal(result.upgraded.version, 11); assert.equal(result.upgraded.stores.includes("animal_nutrition_classifications"), true);
   assert.equal(result.upgraded.stores.includes("animal_nutrition_classification_reviews"), true);
   assert.equal(result.upgraded.animal.animalCode, "PRESERVED"); assert.equal(result.upgraded.photo, "PHOTO"); assert.equal(result.upgraded.queue.status, "pending");
   assert.equal(result.rollbackRejected, true); assert.equal(result.rolledBack.version, 7); assert.equal(result.rolledBack.stores.includes("animal_nutrition_classifications"), false);
