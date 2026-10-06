@@ -146,6 +146,14 @@ try {
   await page.locator("#requirement-applicability-confirmed").check();
   await page.locator('#requirement-applicability-form button[type="submit"]').click();
   await page.locator('#requirement-applicability-list:has-text("Synthetic explicit requirement applicability review")').waitFor();
+  await page.locator("#requirement-calculation-profile").selectOption({ index: 1 });
+  await page.locator("#requirement-calculation-confirmed").check();
+  await page.locator('#requirement-calculation-form button[type="submit"]').click();
+  await page.locator('#requirement-calculation-list:has-text("DMI_KG_DAY: 9.6 kg DM/day")').waitFor();
+  await page.locator('#requirement-calculation-list:has-text("TEST-REQUIREMENT-UI-001")').waitFor();
+  assert.equal((await rows(page, "nutrition_requirement_calculations")).length, 1);
+  assert.equal((await rows(page, "feed_inventory_movements")).length, 1, "requirement calculation must not consume inventory");
+  assert.equal((await rows(page, "sync_queue")).length, 0, "requirement calculation must not queue a cloud write");
   await page.locator('[data-nav="home"]').click(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('[data-view="feeds"]:visible').waitFor();
   await page.locator("#diagnostic-selection-profile").selectOption({ index: 1 });
@@ -167,6 +175,7 @@ try {
   assert.equal((await rows(page, "nutrition_requirement_profiles")).length, 1);
   assert.equal((await rows(page, "nutrition_requirement_profile_reviews")).length, 1);
   assert.equal((await rows(page, "nutrition_requirement_applicability_reviews")).length, 1);
+  assert.equal((await rows(page, "nutrition_requirement_calculations")).length, 1);
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('[data-feed-id]:has-text("TEST feed evidence")').waitFor(); await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
@@ -186,6 +195,8 @@ try {
   assert.equal((await rows(page, "animal_nutrition_classifications")).length, 1);
   await page.locator('#classification-review-list:has-text("Synthetic explicit classification and applicability review")').waitFor();
   await page.locator('#requirement-applicability-list:has-text("Synthetic explicit requirement applicability review")').waitFor();
+  await page.locator('#requirement-calculation-list:has-text("DMI_KG_DAY: 9.6 kg DM/day")').waitFor();
+  assert.equal(await page.locator("#requirement-calculation-form").isVisible(), false, "revoked profile must not remain calculable");
   assert.equal((await rows(page, "animal_nutrition_classification_reviews")).length, 1);
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1, "classification review must not activate another profile");
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
@@ -206,6 +217,7 @@ try {
   assert.equal(await page.locator("#requirement-profile-list").textContent(), "");
   assert.equal(await page.locator("#requirement-review-list").textContent(), "");
   assert.equal(await page.locator("#requirement-applicability-list").textContent(), "");
+  assert.equal(await page.locator("#requirement-calculation-list").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);
