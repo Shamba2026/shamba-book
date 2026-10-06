@@ -765,7 +765,7 @@ function renderRequirementRationReviews(reviews) {
 }
 
 async function handleRequirementRationReviewSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const animalId = selectedAnimalId;
+  event.preventDefault(); const generation = accessGeneration; const animalId = selectedAnimalId; const form = event.currentTarget;
   if (!animalId || !activeUserId || !currentComparisonEvidence) return setStatus("Run and review an evidence comparison first.", "error");
   try {
     await FarmRepository.reviewRequirementRationComparison(currentComparisonEvidence.requirementCalculationId,
@@ -773,7 +773,7 @@ async function handleRequirementRationReviewSubmit(event) {
         rationale: $("#requirement-ration-review-rationale").value, reviewerUserId: activeUserId,
         reviewerConfirmed: $("#requirement-ration-review-confirmed").checked });
     if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
-    event.currentTarget.reset(); await openAnimal(animalId);
+    form.reset(); await openAnimal(animalId);
     setStatus("Immutable comparison review recorded. No ration or inventory was changed.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
