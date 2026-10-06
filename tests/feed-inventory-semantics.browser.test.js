@@ -118,7 +118,8 @@ try {
     await repository.selectDiagnosticProfile(profileV2.id, { rationale: "Revision two approved", animalIds: ["diagnostic-animal"],
       applicabilityConfirmed: true });
     await repository.recordDiagnosticWarningReview({ totalAsFedKg: 10, totalDMIKg: 4, forageDMKg: 1,
-      meDensityMJPerKgDM: 9, cpPercentDM: 12, totalCostCents: 100 }, [{ code: "LOW_ME_DENSITY" }]);
+      meDensityMJPerKgDM: 9, cpPercentDM: 12, totalCostCents: 100 }, [{ code: "LOW_ME_DENSITY" }],
+    { rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true });
     await repository.archiveDiagnosticProfile(profileV2.id, "Synthetic retirement");
     const archivedSelectionDeactivated = await repository.getSelectedDiagnosticProfile() === null;
     const profileHistory = await repository.listDiagnosticProfiles({ includeArchived: true });

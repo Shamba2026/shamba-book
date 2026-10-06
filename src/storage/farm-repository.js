@@ -709,7 +709,7 @@ export async function getSelectedDiagnosticProfile() {
   return Object.freeze({ profile, selection });
 }
 
-export async function recordDiagnosticWarningReview(ration, findings) {
+export async function recordDiagnosticWarningReview(ration, findings, review = {}) {
   const farmId = requireFarm();
   const selected = await getSelectedDiagnosticProfile();
   if (!selected) throw new Error("Approve a diagnostic profile for a confirmed animal group before recording warnings.");
@@ -717,11 +717,15 @@ export async function recordDiagnosticWarningReview(ration, findings) {
   if (metrics.some((key) => !Number.isFinite(Number(ration?.[key])))) throw new Error("Diagnostic warning history received invalid ration metrics.");
   const codes = Array.isArray(findings) ? findings.map((finding) => String(finding?.code || "")).filter(Boolean) : [];
   if (!codes.length) throw new Error("Diagnostic warning history requires at least one finding.");
+  if (review.rationBasis !== "DAILY_OFFERED_RATION" || review.rationBasisConfirmed !== true) {
+    throw new Error("Confirm that the reviewed quantities represent one daily offered ration.");
+  }
   if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
   const event = { id: newId(), farmId, profileId: selected.profile.id, profileVersion: selected.profile.version,
     profileName: selected.profile.name, animalClass: selected.profile.animalClass, applicability: selected.profile.applicability,
     sourceCitation: selected.profile.sourceCitation, selectionId: selected.selection.id,
     animalGroup: structuredClone(selected.selection.animalGroup), rationale: selected.selection.rationale,
+    rationBasis: review.rationBasis, rationBasisConfirmed: true,
     ration: Object.fromEntries(metrics.map((key) => [key, Number(ration[key])])), findingCodes: codes, calculatedAt: now() };
   await putAtomically([{ storeName: "feed_diagnostic_warning_events", value: event }]);
   return event;
