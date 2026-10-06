@@ -80,7 +80,8 @@ const context = vm.createContext({
     listAnimalNutritionClassificationReviews: async () => [],
     listDiagnosticProfiles: async () => [],
     listNutritionRequirementProfiles: async () => [],
-    listNutritionRequirementApplicabilityReviews: async () => []
+    listNutritionRequirementApplicabilityReviews: async () => [],
+    listNutritionRequirementCalculations: async () => []
   },
   getAuthClient: async () => client,
   startSyncLoop(callback) { syncCallback = callback; },
