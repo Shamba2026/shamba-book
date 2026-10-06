@@ -6,7 +6,7 @@ import * as FarmRepository from "./storage/farm-repository.js?build=20261007-01"
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
-import { compareRequirementToRationEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-01";
+import { compareRequirementToRationEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-02";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
@@ -59,6 +59,7 @@ function clearFarmView() {
   $("#requirement-calculation-empty").hidden = false;
   $("#requirement-calculation-form").hidden = true;
   $("#requirement-ration-comparison-form").hidden = true;
+  $("#requirement-ration-comparison-empty").hidden = true;
   $("#requirement-ration-comparison-result").replaceChildren();
   $("#requirement-ration-review-form").hidden = true;
   $("#requirement-ration-review-list").replaceChildren();
@@ -717,8 +718,9 @@ function renderRequirementCalculations(classifications, profiles, applicabilityR
 function renderRequirementRationComparisonOptions(animalId, calculations, rationReviews) {
   comparisonRequirementCalculations = calculations;
   comparisonRationReviews = rationReviews.filter((row) => row.rationBasis === "DAILY_OFFERED_RATION" &&
-    row.rationBasisConfirmed === true && row.animalGroup?.some((animal) => animal.id === animalId));
+    row.rationBasisConfirmed === true && row.animalGroup?.length === 1 && row.animalGroup[0].id === animalId);
   $("#requirement-ration-comparison-form").hidden = !calculations.length || !comparisonRationReviews.length;
+  $("#requirement-ration-comparison-empty").hidden = !calculations.length || comparisonRationReviews.length > 0;
   $("#requirement-ration-calculation").replaceChildren(new Option("Choose calculation", ""), ...calculations.map((row) =>
     new Option(row.sourceTitle + " · " + row.calculatedAt, row.id)));
   $("#requirement-ration-review").replaceChildren(new Option("Choose ration review", ""), ...comparisonRationReviews.map((row) =>

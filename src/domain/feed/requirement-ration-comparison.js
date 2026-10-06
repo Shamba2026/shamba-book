@@ -41,6 +41,9 @@ export function compareRequirementToRationEvidence(requirement, rationReview, an
   if (!rationReview.animalGroup?.some((animal) => animal.id === targetAnimalId)) {
     throw new Error("The selected animal is not in the ration review animal group.");
   }
+  if (rationReview.animalGroup.length !== 1) {
+    throw new Error("Ration evidence must represent a single animal until per-animal group allocation is documented.");
+  }
   if (rationReview.rationBasis !== "DAILY_OFFERED_RATION" || rationReview.rationBasisConfirmed !== true) {
     throw new Error("Ration evidence must explicitly confirm a daily offered ration basis.");
   }

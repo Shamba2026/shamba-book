@@ -40,6 +40,14 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
       sourceCitation: "TEST-RATION-BROWSER-001", selectionId: "selection-a", calculatedAt: "2026-10-06T02:00:00Z",
       rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true, animalGroup: [{ id: "cow-a", animalCode: "TEST-REQ-COW" }],
       ration: { totalDMIKg: 8, meDensityMJPerKgDM: 10, cpPercentDM: 12, totalAsFedKg: 20, forageDMKg: 5, totalCostCents: 100 } });
+    await localDb.put("feed_diagnostic_warning_events", { id: "ration-group", farmId: "farm-a", profileId: "diag-a", profileVersion: 1,
+      sourceCitation: "TEST-RATION-GROUP-001", selectionId: "selection-group", calculatedAt: "2026-10-06T02:30:00Z",
+      rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true,
+      animalGroup: [{ id: "cow-a", animalCode: "TEST-REQ-COW" }, { id: "cow-b", animalCode: "TEST-REQ-COW-B" }],
+      ration: { totalDMIKg: 16, meDensityMJPerKgDM: 10, cpPercentDM: 12, totalAsFedKg: 40, forageDMKg: 10, totalCostCents: 200 } });
+    let groupComparisonRejected = false; try { await repository.reviewRequirementRationComparison(calculation.id, "ration-group", {
+      decision: "ACKNOWLEDGED", rationale: "Group total must not be attributed to one animal.", reviewerUserId: "reviewer", reviewerConfirmed: true }); }
+    catch { groupComparisonRejected = true; }
     const originalPut = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (value, ...args) {
       if (this.name === "nutrition_requirement_ration_reviews") throw new DOMException("Synthetic review failure", "AbortError");
@@ -65,7 +73,8 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
       decision: "ACKNOWLEDGED", rationale: "Cross-farm review must be rejected.", reviewerUserId: "outsider", reviewerConfirmed: true }); }
     catch { crossFarmReviewRejected = true; }
     const db = await localDb.openLocalDatabase(); const stores = [...db.objectStoreNames]; const version = db.version; db.close();
-    return { version, stores, draftRejected, unreviewedRejected, applicability, approved, calculation, comparisonRollbackRejected,
+    return { version, stores, draftRejected, unreviewedRejected, applicability, approved, calculation, groupComparisonRejected,
+      comparisonRollbackRejected,
       comparisonRowsAfterRollback, comparisonReview, revoked, revokedRejected,
       hidden, calculationsHidden, comparisonReviewsHidden, crossFarmReviewRejected,
       records: await localDb.getAll("records"), queue: await localDb.getAll("sync_queue"), movements: await localDb.getAll("feed_inventory_movements") };
@@ -77,6 +86,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
   assert.equal(result.draftRejected, true); assert.equal(result.unreviewedRejected, true); assert.equal(result.approved.profile.status, "approved");
   assert.equal(result.applicability.decision, "APPLICABLE"); assert.equal(result.calculation.outputs[0].value, 10);
   assert.equal(result.comparisonReview.decision, "NEEDS_EVIDENCE_REVIEW");
+  assert.equal(result.groupComparisonRejected, true);
   assert.equal(result.comparisonReview.report.comparisons[0].status, "BELOW_DOCUMENTED_REQUIREMENT");
   assert.equal(result.comparisonRollbackRejected, true); assert.equal(result.comparisonRowsAfterRollback.length, 0);
   assert.equal(result.revoked.profile.status, "revoked"); assert.equal(result.revokedRejected, true);
