@@ -610,8 +610,9 @@ async function handleAnimalNutritionClassificationSubmit(event) {
   event.preventDefault();
   const generation = accessGeneration; const form = event.currentTarget;
   if (!selectedAnimalId) return setStatus("Choose an animal before recording classification evidence.", "error");
+  const animalId = selectedAnimalId;
   try {
-    await FarmRepository.createAnimalNutritionClassification(selectedAnimalId, {
+    await FarmRepository.createAnimalNutritionClassification(animalId, {
       observedAt: $("#classification-date").value, liveWeightKg: $("#classification-weight").value,
       weightMethod: $("#classification-weight-method").value, physiologicalStage: $("#classification-physiology").value,
       lactationStatus: $("#classification-lactation-status").value, lactationStage: $("#classification-lactation-stage").value,
@@ -621,9 +622,9 @@ async function handleAnimalNutritionClassificationSubmit(event) {
       sourceUrl: $("#classification-source-url").value, applicabilityNotes: $("#classification-notes").value,
       revisionReason: $("#classification-revision-reason").value
     });
-    if (!canShowFarmData(generation)) return;
+    if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
     form.reset(); $("#classification-date").value = toLocalDateString();
-    renderAnimalNutritionClassifications(await FarmRepository.listAnimalNutritionClassifications(selectedAnimalId));
+    await openAnimal(animalId);
     setStatus("Classification evidence saved. No recommendation was activated.", "success");
   } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
