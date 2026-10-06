@@ -4,7 +4,8 @@ import { validateCostSource, validateInventoryBatch, validateInventoryMovement }
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
 import { currentDiagnosticProfileSelection, validateDiagnosticProfile,
   validateDiagnosticProfileSelection } from "../domain/feed/diagnostic-profile.js?build=20261005-03";
-import { validateAnimalNutritionClassification, validateAnimalNutritionReview } from "../domain/animal-nutrition-classification.js?build=20261006-02";
+import { currentDiagnosticApplicabilityEvidence, validateAnimalNutritionClassification,
+  validateAnimalNutritionReview } from "../domain/animal-nutrition-classification.js?build=20261006-03";
 
 let activeFarmId = null;
 
@@ -544,6 +545,16 @@ export async function listDiagnosticProfiles({ includeArchived = false } = {}) {
     .sort((a, b) => a.name.localeCompare(b.name) || b.version - a.version);
 }
 
+async function diagnosticApplicabilityEvidence(farmId, profile, group) {
+  const [classifications, reviews] = await Promise.all([
+    getAll("animal_nutrition_classifications"), getAll("animal_nutrition_classification_reviews")
+  ]);
+  const farmClassifications = classifications.filter((row) => row.farmId === farmId);
+  const farmReviews = reviews.filter((row) => row.farmId === farmId);
+  return group.map((animal) => currentDiagnosticApplicabilityEvidence({ animal, profile,
+    classifications: farmClassifications, reviews: farmReviews }));
+}
+
 export async function selectDiagnosticProfile(profileId, input) {
   const farmId = requireFarm();
   const validated = validateDiagnosticProfileSelection({ ...input, profileId });
@@ -553,22 +564,35 @@ export async function selectDiagnosticProfile(profileId, input) {
   const group = validated.animalIds.map((id) => animals.find((animal) => animal.id === id && animal.farmId === farmId &&
     ["active", "dry"].includes(animal.status)));
   if (group.some((animal) => !animal)) throw new Error("Every selected animal must be active in this farm.");
+  const classificationEvidence = await diagnosticApplicabilityEvidence(farmId, profile, group);
   if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
   const selection = { id: newId(), farmId, profileId: validated.profileId, rationale: validated.rationale,
     applicabilityConfirmed: true, applicabilityConfirmedAt: now(), animalGroup: group.map((animal) =>
-      ({ id: animal.id, animalCode: animal.animalCode, type: animal.type, status: animal.status })), selectedAt: now() };
+      ({ id: animal.id, animalCode: animal.animalCode, type: animal.type, status: animal.status })),
+    classificationEvidence, selectedAt: now() };
   await putAtomically([{ storeName: "feed_diagnostic_profile_selections", value: selection }]);
   return selection;
 }
 
 export async function getSelectedDiagnosticProfile() {
   const farmId = requireFarm();
-  const [profiles, events] = await Promise.all([getAll("feed_diagnostic_profiles"), getAll("feed_diagnostic_profile_selections")]);
+  const [profiles, events, animals] = await Promise.all([getAll("feed_diagnostic_profiles"),
+    getAll("feed_diagnostic_profile_selections"), getAll("animals")]);
   if (requireFarm() !== farmId) throw new Error("Farm session changed during read.");
   const selection = currentDiagnosticProfileSelection(events.filter((row) => row.farmId === farmId));
   if (!selection || selection.applicabilityConfirmed !== true || !selection.animalGroup?.length) return null;
   const profile = profiles.find((row) => row.id === selection.profileId && row.farmId === farmId && row.status !== "archived");
-  return profile ? Object.freeze({ profile, selection }) : null;
+  if (!profile) return null;
+  const group = selection.animalGroup.map(({ id }) => animals.find((animal) => animal.id === id && animal.farmId === farmId &&
+    ["active", "dry"].includes(animal.status)));
+  if (group.some((animal) => !animal)) return null;
+  let evidence;
+  try { evidence = await diagnosticApplicabilityEvidence(farmId, profile, group); }
+  catch { return null; }
+  if (!Array.isArray(selection.classificationEvidence) || evidence.some((row, index) =>
+    row.classificationId !== selection.classificationEvidence[index]?.classificationId ||
+    row.reviewId !== selection.classificationEvidence[index]?.reviewId)) return null;
+  return Object.freeze({ profile, selection });
 }
 
 export async function recordDiagnosticWarningReview(ration, findings) {
