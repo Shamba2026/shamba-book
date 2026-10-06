@@ -1,4 +1,4 @@
-import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261007-01";
+import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261007-03";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
@@ -10,6 +10,7 @@ import { calculateRequirements, validateRequirementApplicability, validateRequir
   validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
 import { compareRequirementToRationEvidence, validateComparisonReview } from
   "../domain/feed/requirement-ration-comparison.js?build=20261007-01";
+import { validateRationAllocationEvidence } from "../domain/feed/ration-allocation.js?build=20261007-03";
 
 let activeFarmId = null;
 
@@ -746,14 +747,36 @@ export async function recordDiagnosticWarningReview(ration, findings, review = {
     throw new Error("Confirm that the reviewed quantities represent one daily offered ration.");
   }
   if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  if (!Array.isArray(ration.ingredients) || !ration.ingredients.length) {
+    throw new Error("Diagnostic warning history requires retained ingredient-level ration evidence.");
+  }
+  const ingredients = ration.ingredients.map((row) => ({ feedId: row.feedId, feedName: row.feedName, role: row.role,
+    asFedKg: Number(row.asFedKg), dmKg: Number(row.dmKg), meMJ: Number(row.meMJ), cpKg: Number(row.cpKg),
+    costCents: Number(row.costCents) }));
   const event = { id: newId(), farmId, profileId: selected.profile.id, profileVersion: selected.profile.version,
     profileName: selected.profile.name, animalClass: selected.profile.animalClass, applicability: selected.profile.applicability,
     sourceCitation: selected.profile.sourceCitation, selectionId: selected.selection.id,
     animalGroup: structuredClone(selected.selection.animalGroup), rationale: selected.selection.rationale,
     rationBasis: review.rationBasis, rationBasisConfirmed: true,
-    ration: Object.fromEntries(metrics.map((key) => [key, Number(ration[key])])), findingCodes: codes, calculatedAt: now() };
+    ration: { ...Object.fromEntries(metrics.map((key) => [key, Number(ration[key])])), ingredients },
+    findingCodes: codes, calculatedAt: now() };
   await putAtomically([{ storeName: "feed_diagnostic_warning_events", value: event }]);
   return event;
+}
+
+export async function recordRationAllocationEvidence(rationReviewId, input) {
+  const farmId = requireFarm();
+  const rationReview = await get("feed_diagnostic_warning_events", rationReviewId);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  if (!rationReview || rationReview.farmId !== farmId) throw new Error("Ration review is not in the active farm.");
+  const validated = validateRationAllocationEvidence(rationReview, input);
+  const review = { id: newId(), ...validated, reviewedAt: now() };
+  await putAtomically([{ storeName: "feed_ration_allocation_reviews", value: review }]);
+  return review;
+}
+
+export async function listRationAllocationEvidence() {
+  return farmRows(await getAll("feed_ration_allocation_reviews")).sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt));
 }
 
 export async function listDiagnosticWarningHistory() {

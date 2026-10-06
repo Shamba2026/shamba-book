@@ -86,7 +86,7 @@ try {
     return { upgraded, preserved, upgradeRejected, rolledBack, source, batch, farmA, farmBEmpty,
       crossFarmRejected, writeRejected, afterFailure, records, queue };
   });
-  assert.equal(result.upgraded.version, 12);
+  assert.equal(result.upgraded.version, 13);
   assert.equal(result.upgraded.stores.includes("feed_cost_sources"), true);
   assert.equal(result.upgraded.stores.includes("feed_inventory_batches"), true);
   assert.equal(result.preserved.rows.attachments[0].blobText, "PHOTO-BYTES");
