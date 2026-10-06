@@ -1,4 +1,4 @@
-import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261006-02";
+import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261006-04";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
@@ -6,8 +6,8 @@ import { currentDiagnosticProfileSelection, validateDiagnosticProfile,
   validateDiagnosticProfileSelection } from "../domain/feed/diagnostic-profile.js?build=20261005-03";
 import { currentDiagnosticApplicabilityEvidence, validateAnimalNutritionClassification,
   validateAnimalNutritionReview } from "../domain/animal-nutrition-classification.js?build=20261006-03";
-import { calculateRequirements, validateRequirementApproval,
-  validateRequirementProfile } from "../domain/nutrition-requirement.js?build=20261006-01";
+import { calculateRequirements, validateRequirementApplicability, validateRequirementApproval,
+  validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
 
 let activeFarmId = null;
 
@@ -219,6 +219,9 @@ export async function createNutritionRequirementProfile(input) {
   if (existing.some((row) => row.version === validated.version)) throw new Error("This requirement profile version already exists in the farm.");
   const latest = existing.sort((a, b) => b.version - a.version)[0];
   if (latest && validated.version <= latest.version) throw new Error("A new requirement profile must increase the version.");
+  if (latest && (!validated.supersessionRationale || validated.supersessionRationale.length > 1000)) {
+    throw new Error("A supersession rationale is required for a new profile version.");
+  }
   if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
   const row = { id: newId(), farmId, ...validated, status: "draft", supersedesProfileId: latest?.id || null, createdAt: now(), updatedAt: now() };
   await putAtomically([{ storeName: "nutrition_requirement_profiles", value: row }]); return row;
@@ -228,10 +231,34 @@ export async function approveNutritionRequirementProfile(profileId, input) {
   const farmId = requireFarm(); const validated = validateRequirementApproval(input);
   const profile = await get("nutrition_requirement_profiles", profileId);
   if (!profile || profile.farmId !== farmId || profile.status !== "draft") throw new Error("Requirement profile is not an approvable draft in this farm.");
+  const superseded = profile.supersedesProfileId ? await get("nutrition_requirement_profiles", profile.supersedesProfileId) : null;
+  if (superseded && superseded.farmId !== farmId) throw new Error("Superseded profile is not in the active farm.");
   const timestamp = now(); const approved = { ...profile, status: "approved", approvedAt: timestamp, updatedAt: timestamp };
   const review = { id: newId(), farmId, profileId, profileVersion: profile.version, ...validated, decision: "APPROVED", reviewedAt: timestamp };
-  await putAtomically([{ storeName: "nutrition_requirement_profiles", value: approved },
-    { storeName: "nutrition_requirement_profile_reviews", value: review }]); return Object.freeze({ profile: approved, review });
+  const entries = [{ storeName: "nutrition_requirement_profiles", value: approved },
+    { storeName: "nutrition_requirement_profile_reviews", value: review }];
+  if (superseded && superseded.status !== "revoked" && superseded.status !== "superseded") {
+    entries.push({ storeName: "nutrition_requirement_profiles", value: { ...superseded, status: "superseded",
+      supersededByProfileId: approved.id, supersededAt: timestamp, updatedAt: timestamp } },
+    { storeName: "nutrition_requirement_profile_reviews", value: { id: newId(), farmId, profileId: superseded.id,
+      profileVersion: superseded.version, ...validated, decision: "SUPERSEDED", rationale: profile.supersessionRationale, reviewedAt: timestamp } });
+  }
+  await putAtomically(entries); return Object.freeze({ profile: approved, review });
+}
+
+export async function revokeNutritionRequirementProfile(profileId, input) {
+  const farmId = requireFarm(); const validated = validateRequirementReview(input, "REVOKED");
+  const profile = await get("nutrition_requirement_profiles", profileId);
+  if (!profile || profile.farmId !== farmId || profile.status !== "approved") throw new Error("Only an approved profile in this farm can be revoked.");
+  const timestamp = now(); const revoked = { ...profile, status: "revoked", revokedAt: timestamp, updatedAt: timestamp };
+  const review = { id: newId(), farmId, profileId, profileVersion: profile.version, ...validated, decision: "REVOKED", reviewedAt: timestamp };
+  await putAtomically([{ storeName: "nutrition_requirement_profiles", value: revoked },
+    { storeName: "nutrition_requirement_profile_reviews", value: review }]); return Object.freeze({ profile: revoked, review });
+}
+
+export async function listNutritionRequirementProfileReviews(profileId = null) {
+  return farmRows(await getAll("nutrition_requirement_profile_reviews")).filter((row) => !profileId || row.profileId === profileId)
+    .sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt) || b.id.localeCompare(a.id));
 }
 
 export async function listNutritionRequirementProfiles({ includeDrafts = true } = {}) {
@@ -239,11 +266,40 @@ export async function listNutritionRequirementProfiles({ includeDrafts = true } 
     .sort((a, b) => a.name.localeCompare(b.name) || b.version - a.version);
 }
 
+export async function reviewNutritionRequirementApplicability(profileId, classificationId, input) {
+  const farmId = requireFarm(); const validated = validateRequirementApplicability(input);
+  const [profile, classification] = await Promise.all([get("nutrition_requirement_profiles", profileId),
+    get("animal_nutrition_classifications", classificationId)]);
+  if (!profile || profile.farmId !== farmId || profile.status !== "approved") throw new Error("Requirement profile is not approved in this farm.");
+  if (!classification || classification.farmId !== farmId) throw new Error("Classification is not in the active farm.");
+  const latest = farmRows(await getAll("animal_nutrition_classifications")).filter((row) => row.animalId === classification.animalId)
+    .sort((a, b) => b.version - a.version || b.createdAt.localeCompare(a.createdAt))[0];
+  if (latest?.id !== classification.id) throw new Error("Applicability can only be reviewed against the latest classification.");
+  const evidenceReviews = farmRows(await getAll("animal_nutrition_classification_reviews"))
+    .filter((row) => row.classificationId === classification.id).sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt));
+  if (validated.decision === "APPLICABLE" && (evidenceReviews[0]?.evidenceDecision !== "CONFIRMED" || evidenceReviews[0]?.reviewerConfirmed !== true)) {
+    throw new Error("Applicable requires a confirmed review of the selected classification.");
+  }
+  const animal = await get("animals", classification.animalId);
+  if (!animal || animal.farmId !== farmId) throw new Error("Animal is not in the active farm.");
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during save.");
+  const event = { id: newId(), farmId, profileId, profileName: profile.name, profileVersion: profile.version,
+    animalId: animal.id, animalCode: animal.animalCode, classificationId, classificationVersion: classification.version,
+    ...validated, reviewedAt: now() };
+  await putAtomically([{ storeName: "nutrition_requirement_applicability_reviews", value: event }]); return event;
+}
+
+export async function listNutritionRequirementApplicabilityReviews(animalId = null) {
+  return farmRows(await getAll("nutrition_requirement_applicability_reviews")).filter((row) => !animalId || row.animalId === animalId)
+    .sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt) || b.id.localeCompare(a.id));
+}
+
 export async function calculateAnimalNutritionRequirements(profileId, animalId, input) {
   const farmId = requireFarm(); const profile = await get("nutrition_requirement_profiles", profileId); const animal = await get("animals", animalId);
   if (!profile || profile.farmId !== farmId || !animal || animal.farmId !== farmId) throw new Error("Profile and animal must be in the active farm.");
-  const [approvals, classifications, reviews] = await Promise.all([getAll("nutrition_requirement_profile_reviews"),
-    getAll("animal_nutrition_classifications"), getAll("animal_nutrition_classification_reviews")]);
+  const [approvals, classifications, reviews, applicabilityReviews] = await Promise.all([getAll("nutrition_requirement_profile_reviews"),
+    getAll("animal_nutrition_classifications"), getAll("animal_nutrition_classification_reviews"),
+    getAll("nutrition_requirement_applicability_reviews")]);
   const approval = approvals.filter((row) => row.farmId === farmId && row.profileId === profileId && row.decision === "APPROVED")
     .sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt))[0];
   const classification = classifications.filter((row) => row.farmId === farmId && row.animalId === animalId)
@@ -251,7 +307,10 @@ export async function calculateAnimalNutritionRequirements(profileId, animalId, 
   const classificationReview = classification ? reviews.filter((row) => row.farmId === farmId && row.animalId === animalId &&
     row.classificationId === classification.id && row.evidenceDecision === "CONFIRMED")
     .sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt))[0] : null;
-  const result = calculateRequirements({ profile, approval, animal, classification, classificationReview, confirmed: input?.confirmed });
+  const applicabilityReview = classification ? applicabilityReviews.filter((row) => row.farmId === farmId && row.animalId === animalId &&
+    row.profileId === profileId && row.classificationId === classification.id)
+    .sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt) || b.id.localeCompare(a.id))[0] : null;
+  const result = calculateRequirements({ profile, approval, applicabilityReview, animal, classification, classificationReview, confirmed: input?.confirmed });
   if (requireFarm() !== farmId) throw new Error("Farm session changed during calculation.");
   const initiatedByUserId = String(input?.initiatedByUserId || "").trim();
   if (!initiatedByUserId) throw new Error("Authenticated calculation initiator is required.");

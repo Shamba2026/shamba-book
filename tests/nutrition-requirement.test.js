@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateRequirements, validateRequirementApproval, validateRequirementProfile } from "../src/domain/nutrition-requirement.js";
+import { calculateRequirements, validateRequirementApplicability, validateRequirementApproval, validateRequirementProfile } from "../src/domain/nutrition-requirement.js";
 
 const profile = validateRequirementProfile({ name: "Synthetic governed profile", version: 1, animalClass: "LACTATING_DAIRY_COW",
   applicability: "Synthetic tests only; source-specific applicability must be reviewed.", nutrientSystem: "TEST SYSTEM",
@@ -17,8 +17,12 @@ const approval = { id: "approval-1", profileId: approved.id, reviewerConfirmed: 
 const animal = { id: "cow-1" };
 const classification = { id: "class-1", animalId: animal.id, liveWeightKg: 500, averageDailyMilkLiters: 20 };
 const classificationReview = { id: "class-review-1", classificationId: classification.id, evidenceDecision: "CONFIRMED", reviewerConfirmed: true };
-assert.throws(() => calculateRequirements({ profile: approved, approval, animal, classification, classificationReview, confirmed: false }), /confirmation/);
-const result = calculateRequirements({ profile: approved, approval, animal, classification, classificationReview, confirmed: true });
+const applicabilityReview = { id: "app-1", profileId: approved.id, classificationId: classification.id, decision: "APPLICABLE", reviewerConfirmed: true };
+assert.throws(() => validateRequirementApplicability({ decision: "APPLICABLE", reviewerUserId: "reviewer", rationale: "Reviewed", reviewerConfirmed: false }), /confirmation/);
+assert.throws(() => calculateRequirements({ profile: approved, approval, applicabilityReview, animal, classification, classificationReview, confirmed: false }), /confirmation/);
+assert.throws(() => calculateRequirements({ profile: approved, approval, animal, classification, classificationReview, confirmed: true }), /applicability/);
+const result = calculateRequirements({ profile: approved, approval, applicabilityReview, animal, classification, classificationReview, confirmed: true });
 assert.deepEqual(result.outputs, [{ outputCode: "DMI_KG_DAY", outputUnit: "kg DM/day", value: 11, equationReference: "Synthetic equation A" }]);
 assert.equal(result.classificationReviewId, classificationReview.id);
+assert.equal(result.applicabilityReviewId, applicabilityReview.id);
 console.log("nutrition-requirement.test.js: PASS");
