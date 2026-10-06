@@ -79,7 +79,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
       hidden, calculationsHidden, comparisonReviewsHidden, crossFarmReviewRejected,
       records: await localDb.getAll("records"), queue: await localDb.getAll("sync_queue"), movements: await localDb.getAll("feed_inventory_movements") };
   });
-  assert.equal(result.version, 12); assert.equal(result.stores.includes("nutrition_requirement_profiles"), true);
+  assert.equal(result.version, 13); assert.equal(result.stores.includes("nutrition_requirement_profiles"), true);
   assert.equal(result.stores.includes("nutrition_requirement_profile_reviews"), true); assert.equal(result.stores.includes("nutrition_requirement_calculations"), true);
   assert.equal(result.stores.includes("nutrition_requirement_applicability_reviews"), true);
   assert.equal(result.stores.includes("nutrition_requirement_ration_reviews"), true);

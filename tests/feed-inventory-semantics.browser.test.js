@@ -118,7 +118,9 @@ try {
     await repository.selectDiagnosticProfile(profileV2.id, { rationale: "Revision two approved", animalIds: ["diagnostic-animal"],
       applicabilityConfirmed: true });
     await repository.recordDiagnosticWarningReview({ totalAsFedKg: 10, totalDMIKg: 4, forageDMKg: 1,
-      meDensityMJPerKgDM: 9, cpPercentDM: 12, totalCostCents: 100 }, [{ code: "LOW_ME_DENSITY" }],
+      meDensityMJPerKgDM: 9, cpPercentDM: 12, totalCostCents: 100,
+      ingredients: [{ feedId: "feed-a", feedName: "Synthetic feed", role: "forage", asFedKg: 10,
+        dmKg: 4, meMJ: 36, cpKg: 0.48, costCents: 100 }] }, [{ code: "LOW_ME_DENSITY" }],
     { rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true });
     await repository.archiveDiagnosticProfile(profileV2.id, "Synthetic retirement");
     const archivedSelectionDeactivated = await repository.getSelectedDiagnosticProfile() === null;
@@ -133,7 +135,7 @@ try {
       archivedSelectionDeactivated, profileHistory, warningHistory,
       records, queue, selectionEvents };
   });
-  assert.equal(result.upgraded.version, 12); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
+  assert.equal(result.upgraded.version, 13); assert.equal(result.upgraded.stores.includes("feed_diagnostic_profiles"), true);
   assert.equal(result.upgraded.stores.includes("feed_diagnostic_warning_events"), true);
   assert.equal(result.upgraded.stores.includes("feed_diagnostic_profile_selections"), true);
   assert.equal(result.upgraded.stores.includes("feed_nutrition_selections"), true); assert.equal(result.preserved.photo, "PRESERVED-PHOTO");

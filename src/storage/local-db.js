@@ -1,5 +1,5 @@
 const DB_NAME = "ngombe-herdbook";
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -187,6 +187,13 @@ export function openLocalDatabase() {
         store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("animalId", "animalId", { unique: false });
         store.createIndex("requirementCalculationId", "requirementCalculationId", { unique: false });
         store.createIndex("rationReviewId", "rationReviewId", { unique: false }); store.createIndex("reviewedAt", "reviewedAt", { unique: false });
+      }
+      // Version 13 stores reviewed, ingredient-level allocations of a group
+      // ration. It is an audit store only and cannot consume inventory.
+      if (!db.objectStoreNames.contains("feed_ration_allocation_reviews")) {
+        const store = db.createObjectStore("feed_ration_allocation_reviews", { keyPath: "id" });
+        store.createIndex("farmId", "farmId", { unique: false }); store.createIndex("rationReviewId", "rationReviewId", { unique: false });
+        store.createIndex("reviewedAt", "reviewedAt", { unique: false });
       }
     };
 
