@@ -1,4 +1,4 @@
-import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261006-04";
+import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261007-01";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
@@ -8,6 +8,8 @@ import { currentDiagnosticApplicabilityEvidence, validateAnimalNutritionClassifi
   validateAnimalNutritionReview } from "../domain/animal-nutrition-classification.js?build=20261006-03";
 import { calculateRequirements, validateRequirementApplicability, validateRequirementApproval,
   validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
+import { compareRequirementToRationEvidence, validateComparisonReview } from
+  "../domain/feed/requirement-ration-comparison.js?build=20261007-01";
 
 let activeFarmId = null;
 
@@ -322,6 +324,29 @@ export async function calculateAnimalNutritionRequirements(profileId, animalId, 
 export async function listNutritionRequirementCalculations(animalId = null) {
   return farmRows(await getAll("nutrition_requirement_calculations")).filter((row) => !animalId || row.animalId === animalId)
     .sort((a, b) => b.calculatedAt.localeCompare(a.calculatedAt));
+}
+
+export async function reviewRequirementRationComparison(requirementCalculationId, rationReviewId, input) {
+  const farmId = requireFarm();
+  const [requirement, rationReview] = await Promise.all([
+    get("nutrition_requirement_calculations", requirementCalculationId), get("feed_diagnostic_warning_events", rationReviewId)
+  ]);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during review.");
+  if (!requirement || requirement.farmId !== farmId || !rationReview || rationReview.farmId !== farmId) {
+    throw new Error("Comparison evidence is not available in the active farm.");
+  }
+  const report = compareRequirementToRationEvidence(requirement, rationReview, requirement.animalId);
+  const review = validateComparisonReview(input);
+  const event = Object.freeze({ id: newId(), farmId, animalId: requirement.animalId,
+    requirementCalculationId: requirement.id, rationReviewId: rationReview.id,
+    report: structuredClone(report), ...review, reviewedAt: now() });
+  await putAtomically([{ storeName: "nutrition_requirement_ration_reviews", value: event }]);
+  return event;
+}
+
+export async function listRequirementRationComparisonReviews(animalId = null) {
+  return farmRows(await getAll("nutrition_requirement_ration_reviews")).filter((row) => !animalId || row.animalId === animalId)
+    .sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt));
 }
 
 export async function saveMilkRecord(input) {
