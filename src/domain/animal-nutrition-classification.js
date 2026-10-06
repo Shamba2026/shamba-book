@@ -86,3 +86,18 @@ export function validateAnimalNutritionReview(input) {
     reviewerUserId: requiredText(input?.reviewerUserId, "Authenticated reviewer", 100),
     rationale: requiredText(input?.rationale, "Review rationale", 1000), reviewerConfirmed: true });
 }
+
+export function currentDiagnosticApplicabilityEvidence({ animal, profile, classifications, reviews }) {
+  const classification = classifications.filter((row) => row.animalId === animal.id)
+    .sort((a, b) => b.version - a.version || String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  const review = classification ? reviews.filter((row) => row.animalId === animal.id &&
+    row.classificationId === classification.id && row.profileId === profile.id)
+    .sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)) || b.id.localeCompare(a.id))[0] : null;
+  if (!classification || !review || review.evidenceDecision !== "CONFIRMED" ||
+    review.applicabilityDecision !== "APPLICABLE" || review.reviewerConfirmed !== true) {
+    throw new Error(`${animal.animalCode} requires a confirmed review of its latest classification for this exact diagnostic profile.`);
+  }
+  return Object.freeze({ animalId: animal.id, animalCode: animal.animalCode, classificationId: classification.id,
+    classificationVersion: classification.version, reviewId: review.id, reviewerUserId: review.reviewerUserId,
+    reviewedAt: review.reviewedAt });
+}

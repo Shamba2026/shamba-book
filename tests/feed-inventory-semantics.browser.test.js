@@ -71,6 +71,17 @@ try {
       sourceCitation: "TEST-DIAGNOSTIC-001", sourceUrl: "", publicationYear: 2021,
       minimumForageDMFraction: 0.4, minimumMEDensityMJPerKgDM: 10, minimumCPPercentDM: 13 });
     const noAutomaticDiagnostic = await repository.getSelectedDiagnosticProfile();
+    let unreviewedDiagnosticRejected = false;
+    try { await repository.selectDiagnosticProfile(profile.id, { rationale: "Missing classification review",
+      animalIds: ["diagnostic-animal"], applicabilityConfirmed: true }); } catch { unreviewedDiagnosticRejected = true; }
+    const classificationInput = { observedAt: "2026-10-05", liveWeightKg: 480, weightMethod: "SCALE_MEASURED",
+      physiologicalStage: "POSTPARTUM", lactationStatus: "LACTATING", lactationStage: "EARLY", productionContext: "DAIRY",
+      averageDailyMilkLiters: 20, productionWindowDays: 7, evidenceType: "FARM_RECORD", sourceTitle: "Synthetic animal evidence",
+      sourceCitation: "TEST-CLASSIFICATION", sourceUrl: "", applicabilityNotes: "Synthetic activation-gate evidence only" };
+    const classification = await repository.createAnimalNutritionClassification("diagnostic-animal", classificationInput);
+    await repository.reviewAnimalNutritionClassification(classification.id, { evidenceDecision: "CONFIRMED", profileId: profile.id,
+      applicabilityDecision: "APPLICABLE", reviewerUserId: "reviewer-a", reviewerConfirmed: true,
+      rationale: "Synthetic reviewed applicability" });
     await repository.selectDiagnosticProfile(profile.id, { rationale: "Synthetic reviewed applicability",
       animalIds: ["diagnostic-animal"], applicabilityConfirmed: true });
     const selectedDiagnostic = await repository.getSelectedDiagnosticProfile();
@@ -101,6 +112,9 @@ try {
     const afterFailedSupersession = await repository.listDiagnosticProfiles({ includeArchived: true });
     const profileV2 = await repository.supersedeDiagnosticProfile(profile.id, revision);
     const oldSelectionDeactivated = await repository.getSelectedDiagnosticProfile() === null;
+    await repository.reviewAnimalNutritionClassification(classification.id, { evidenceDecision: "CONFIRMED", profileId: profileV2.id,
+      applicabilityDecision: "APPLICABLE", reviewerUserId: "reviewer-a", reviewerConfirmed: true,
+      rationale: "Revision two applicability reviewed" });
     await repository.selectDiagnosticProfile(profileV2.id, { rationale: "Revision two approved", animalIds: ["diagnostic-animal"],
       applicabilityConfirmed: true });
     await repository.recordDiagnosticWarningReview({ totalAsFedKg: 10, totalDMIKg: 4, forageDMKg: 1,
@@ -112,7 +126,7 @@ try {
     const records = await localDb.getAll("records"); const queue = await localDb.getAll("sync_queue");
     const selectionEvents = await localDb.getAll("feed_nutrition_selections");
     return { upgraded, preserved, upgradeRejected, rolledBack, batch, concurrent: concurrent.map((x) => x.status), inventory,
-      noAutomaticSelection, selections, noAutomaticDiagnostic, selectedDiagnostic, hiddenInventory, hiddenSelections,
+      noAutomaticSelection, selections, noAutomaticDiagnostic, unreviewedDiagnosticRejected, selectedDiagnostic, hiddenInventory, hiddenSelections,
       hiddenDiagnostic, crossFarmDiagnosticRejected, crossFarmSelectionRejected,
       archivedSelectionRejected, supersessionRollbackRejected, afterFailedSupersession, oldSelectionDeactivated,
       archivedSelectionDeactivated, profileHistory, warningHistory,
@@ -129,6 +143,7 @@ try {
   assert.equal(result.inventory[0].remainingQuantityKg, 2.5); assert.deepEqual(result.noAutomaticSelection, {});
   assert.equal(result.selections.CP.observation.value, 16); assert.equal(result.selections.CP.source.citation, "TEST-LAB");
   assert.equal(result.noAutomaticDiagnostic, null); assert.equal(result.selectedDiagnostic.profile.version, 1);
+  assert.equal(result.unreviewedDiagnosticRejected, true);
   assert.equal(result.selectedDiagnostic.selection.rationale, "Synthetic reviewed applicability");
   assert.equal(result.hiddenDiagnostic, true); assert.equal(result.crossFarmDiagnosticRejected, true);
   assert.equal(result.supersessionRollbackRejected, true); assert.equal(result.afterFailedSupersession.length, 1);
