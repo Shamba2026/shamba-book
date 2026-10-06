@@ -152,7 +152,6 @@ Run in Supabase SQL Editor or Supabase's supported inspection tooling:
 
 Supabase currently recommends inspecting RLS state and policies and testing allow/deny behavior before relying on the security model. citeturn359523search0turn359523search1
 
-
 ## Evidence update — 6 October 2026
 
 Later read-only SQL results supplied by the farm owner establish that:
