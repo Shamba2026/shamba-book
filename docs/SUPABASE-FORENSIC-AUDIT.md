@@ -151,3 +151,26 @@ Run in Supabase SQL Editor or Supabase's supported inspection tooling:
    verify enabled providers and intended farm/user model.
 
 Supabase currently recommends inspecting RLS state and policies and testing allow/deny behavior before relying on the security model. citeturn359523search0turn359523search1
+
+## Evidence update — 6 October 2026
+
+Later read-only SQL results supplied by the farm owner establish that:
+
+- `farms`, `farm_members`, `animals`, `milk_logs`, `weight_logs`, `breeding_logs`, `health_logs` and `expense_logs` exist;
+- the configured farm exists and has one membership row;
+- RLS is enabled on `animals`, `farm_members` and `milk_logs`;
+- farm-member policies were shown for `animals`, `expense_logs`, `health_logs`, `milk_logs` and `weight_logs`;
+- a constrained own-membership SELECT policy was shown for `farm_members`;
+- a farm-member SELECT policy was shown for `farms`.
+
+The supplied evidence did not establish:
+
+- RLS-enabled status for `weight_logs`, `breeding_logs`, `health_logs` or `expense_logs`;
+- any policy for `breeding_logs`;
+- the existence of `income_logs` or `payment_logs`, although the current adapter references both;
+- unique constraints required by the adapter's `upsert` conflict targets;
+- foreign keys, grants, storage policies or two-account allow/deny runtime results.
+
+There is also a naming mismatch: the current adapter and live evidence use `breeding_logs`, while `supabase/001_target_schema.sql` defines `breeding_events`. The draft schema remains non-executable against production.
+
+`src/cloud/cloud-readiness.js` now evaluates these requirements fail-closed. The supplied evidence produces `ready: false`. This does not query Supabase and cannot enable synchronization.
