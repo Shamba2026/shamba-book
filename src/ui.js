@@ -2,10 +2,11 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261006-04";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261006-05";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
+import { compareRequirementToRationEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261006-01";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
@@ -18,6 +19,8 @@ let accessGeneration = 0;
 let selectedDiagnosticProfile = null;
 let selectedAnimalId = null;
 let activeUserId = null;
+let comparisonRequirementCalculations = [];
+let comparisonRationReviews = [];
 
 function clearFarmView() {
   feedRefreshGeneration += 1;
@@ -26,7 +29,8 @@ function clearFarmView() {
     "#feed-movement-form", "#feed-selection-form", "#ration-review-form", "#diagnostic-profile-form",
     "#diagnostic-selection-form", "#diagnostic-archive-form", "#animal-nutrition-classification-form",
     "#animal-nutrition-review-form", "#requirement-profile-form", "#requirement-approval-form",
-    "#requirement-revocation-form", "#requirement-applicability-form", "#requirement-calculation-form"].forEach((selector) => {
+    "#requirement-revocation-form", "#requirement-applicability-form", "#requirement-calculation-form",
+    "#requirement-ration-comparison-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -53,6 +57,10 @@ function clearFarmView() {
   $("#requirement-calculation-count").textContent = "0 calculations";
   $("#requirement-calculation-empty").hidden = false;
   $("#requirement-calculation-form").hidden = true;
+  $("#requirement-ration-comparison-form").hidden = true;
+  $("#requirement-ration-comparison-result").replaceChildren();
+  comparisonRequirementCalculations = [];
+  comparisonRationReviews = [];
   ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
     $(selector).textContent = "";
   });
@@ -96,7 +104,8 @@ function clearFarmView() {
     "#feed-movement-batch", "#feed-selection-observation", "#diagnostic-selection-profile",
     "#diagnostic-selection-animals", "#diagnostic-archive-profile", "#diagnostic-supersedes",
     "#requirement-approval-profile", "#requirement-revocation-profile", "#requirement-applicability-profile",
-    "#requirement-applicability-classification", "#requirement-calculation-profile"].forEach((selector) => $(selector).replaceChildren());
+    "#requirement-applicability-classification", "#requirement-calculation-profile", "#requirement-ration-calculation",
+    "#requirement-ration-review"].forEach((selector) => $(selector).replaceChildren());
   $("#feed-count").textContent = "0 feeds";
   $("#feed-source-count").textContent = "0 sources";
   $("#feed-cost-source-count").textContent = "0 sources";
@@ -228,7 +237,9 @@ async function handleRationReview(event) {
     const ration = buildReadOnlyRation(rows);
     const forageShare = ration.forageDMKg / ration.totalDMIKg * 100;
     const diagnostic = selectedDiagnosticProfile ? evaluateRation(ration, selectedDiagnosticProfile.profile) : null;
-    if (diagnostic) await FarmRepository.recordDiagnosticWarningReview(ration, diagnostic);
+    if (diagnostic) await FarmRepository.recordDiagnosticWarningReview(ration, diagnostic, {
+      rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: $("#ration-daily-basis").checked
+    });
     if (!canShowFarmData(generation)) return;
     const messages = { LOW_FORAGE_DM_SHARE: "Below the selected profile’s minimum forage dry-matter share.",
       LOW_ME_DENSITY: "Below the selected profile’s minimum ME density.",
@@ -697,6 +708,42 @@ function renderRequirementCalculations(classifications, profiles, applicabilityR
     ' · immutable calculation · no ration recommendation or inventory movement</small></div>').join("");
 }
 
+function renderRequirementRationComparisonOptions(animalId, calculations, rationReviews) {
+  comparisonRequirementCalculations = calculations;
+  comparisonRationReviews = rationReviews.filter((row) => row.rationBasis === "DAILY_OFFERED_RATION" &&
+    row.rationBasisConfirmed === true && row.animalGroup?.some((animal) => animal.id === animalId));
+  $("#requirement-ration-comparison-form").hidden = !calculations.length || !comparisonRationReviews.length;
+  $("#requirement-ration-calculation").replaceChildren(new Option("Choose calculation", ""), ...calculations.map((row) =>
+    new Option(row.sourceTitle + " · " + row.calculatedAt, row.id)));
+  $("#requirement-ration-review").replaceChildren(new Option("Choose ration review", ""), ...comparisonRationReviews.map((row) =>
+    new Option(row.profileName + " v" + row.profileVersion + " · " + row.calculatedAt, row.id)));
+  $("#requirement-ration-comparison-result").replaceChildren();
+}
+
+function handleRequirementRationComparison(event) {
+  event.preventDefault();
+  try {
+    const requirement = comparisonRequirementCalculations.find((row) => row.id === $("#requirement-ration-calculation").value);
+    const ration = comparisonRationReviews.find((row) => row.id === $("#requirement-ration-review").value);
+    const report = compareRequirementToRationEvidence(requirement, ration, selectedAnimalId);
+    const labels = { BELOW_DOCUMENTED_REQUIREMENT: "Below documented requirement", ABOVE_DOCUMENTED_REQUIREMENT: "Above documented requirement",
+      MATCHES_DOCUMENTED_REQUIREMENT: "Matches documented requirement" };
+    const rows = report.comparisons.map((row) => '<div class="evidence-row"><strong>' + escapeHtml(row.outputCode + " · " + labels[row.status]) +
+      '</strong><span>Requirement: ' + escapeHtml(row.requiredValue + " " + row.outputUnit) + ' · ration evidence: ' +
+      escapeHtml(row.suppliedValue + " " + row.outputUnit) + ' · gap: ' + escapeHtml(row.gap + " " + row.outputUnit) +
+      '</span><small>Derivation: ' + escapeHtml(row.derivation) + '</small></div>').join("");
+    const omitted = report.uncompared.length ? '<p class="muted">Not compared: ' + escapeHtml(report.uncompared.map((row) => row.outputCode).join(", ")) +
+      ' — no directly compatible retained ration evidence.</p>' : "";
+    $("#requirement-ration-comparison-result").innerHTML = '<div class="feed-list">' + rows + '</div>' + omitted +
+      '<p class="muted">Attribution: requirement calculation ' + escapeHtml(report.attribution.requirementCalculationId) +
+      ' · ration review ' + escapeHtml(report.attribution.rationReviewId) +
+      '. Arithmetic comparison only; no adequacy judgment or feed recommendation.</p>';
+    setStatus("Read-only requirement and ration evidence comparison completed.", "success");
+  } catch (error) {
+    $("#requirement-ration-comparison-result").replaceChildren(); setStatus(error.message || String(error), "error");
+  }
+}
+
 async function openAnimal(animalId) {
   const generation = accessGeneration;
   if (!canShowFarmData(generation)) return;
@@ -724,15 +771,17 @@ async function openAnimal(animalId) {
   } else {
     image.hidden = true;
   }
-  const [classifications, reviews, profiles, requirementProfiles, applicabilityReviews, requirementCalculations] = await Promise.all([
+  const [classifications, reviews, profiles, requirementProfiles, applicabilityReviews, requirementCalculations, rationReviews] = await Promise.all([
     FarmRepository.listAnimalNutritionClassifications(animalId), FarmRepository.listAnimalNutritionClassificationReviews(animalId),
     FarmRepository.listDiagnosticProfiles({ includeArchived: false }), FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }),
-    FarmRepository.listNutritionRequirementApplicabilityReviews(animalId), FarmRepository.listNutritionRequirementCalculations(animalId)]);
+    FarmRepository.listNutritionRequirementApplicabilityReviews(animalId), FarmRepository.listNutritionRequirementCalculations(animalId),
+    FarmRepository.listDiagnosticWarningHistory()]);
   if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
   renderAnimalNutritionClassifications(classifications);
   renderAnimalNutritionReviews(classifications, reviews, profiles);
   renderRequirementApplicability(classifications, requirementProfiles, applicabilityReviews);
   renderRequirementCalculations(classifications, requirementProfiles, applicabilityReviews, requirementCalculations);
+  renderRequirementRationComparisonOptions(animalId, requirementCalculations, rationReviews);
 }
 
 async function handleAnimalNutritionClassificationSubmit(event) {
@@ -1338,6 +1387,7 @@ export async function initApp() {
   $("#animal-nutrition-review-form").addEventListener("submit", handleAnimalNutritionReviewSubmit);
   $("#requirement-applicability-form").addEventListener("submit", handleRequirementApplicabilitySubmit);
   $("#requirement-calculation-form").addEventListener("submit", handleRequirementCalculationSubmit);
+  $("#requirement-ration-comparison-form").addEventListener("submit", handleRequirementRationComparison);
   $("#feed-observation-nutrient").addEventListener("change", selectNutritionMetric);
   $("#feed-list").addEventListener("click", (event) => {
     const row = event.target.closest("[data-feed-id]");

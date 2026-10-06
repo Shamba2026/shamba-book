@@ -162,7 +162,8 @@ try {
   await page.locator("#diagnostic-applicability-confirmed").check();
   await page.locator('#diagnostic-selection-form button[type="submit"]').click();
   await page.locator('#diagnostic-current-selection:has-text("Synthetic explicit review decision")').waitFor();
-  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
+  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-daily-basis").check();
+  await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("Applied TEST lactating profile v1")').waitFor();
   await page.locator('#ration-review-result:has-text("minimum ME density")').waitFor();
   await page.locator('#diagnostic-history-list:has-text("TEST-DIAGNOSTIC-COW")').waitFor();
@@ -187,7 +188,8 @@ try {
   await page.locator("#requirement-revocation-rationale").fill("Synthetic UI revocation review");
   await page.locator("#requirement-revocation-confirmed").check(); await page.locator('#requirement-revocation-form button[type="submit"]').click();
   await page.locator('#requirement-profile-list:has-text("status: revoked")').waitFor();
-  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-review-calculate").click();
+  await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-daily-basis").check();
+  await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
   await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
   await page.locator("#animal-profile:visible").waitFor();
@@ -196,6 +198,13 @@ try {
   await page.locator('#classification-review-list:has-text("Synthetic explicit classification and applicability review")').waitFor();
   await page.locator('#requirement-applicability-list:has-text("Synthetic explicit requirement applicability review")').waitFor();
   await page.locator('#requirement-calculation-list:has-text("DMI_KG_DAY: 9.6 kg DM/day")').waitFor();
+  await page.locator("#requirement-ration-calculation").selectOption({ index: 1 });
+  await page.locator("#requirement-ration-review").selectOption({ index: 1 });
+  await page.locator('#requirement-ration-comparison-form button[type="submit"]').click();
+  await page.locator('#requirement-ration-comparison-result:has-text("Below documented requirement")').waitFor();
+  assert.match(await page.locator("#requirement-ration-comparison-result").textContent(), /no adequacy judgment or feed recommendation/i);
+  assert.equal((await rows(page, "feed_inventory_movements")).length, 1, "comparison must not consume inventory");
+  assert.equal((await rows(page, "sync_queue")).length, 0, "comparison must not queue a cloud write");
   assert.equal(await page.locator("#requirement-calculation-form").isVisible(), false, "revoked profile must not remain calculable");
   assert.equal((await rows(page, "animal_nutrition_classification_reviews")).length, 1);
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1, "classification review must not activate another profile");
@@ -218,6 +227,7 @@ try {
   assert.equal(await page.locator("#requirement-review-list").textContent(), "");
   assert.equal(await page.locator("#requirement-applicability-list").textContent(), "");
   assert.equal(await page.locator("#requirement-calculation-list").textContent(), "");
+  assert.equal(await page.locator("#requirement-ration-comparison-result").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);
