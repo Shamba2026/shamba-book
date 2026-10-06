@@ -129,7 +129,8 @@ try {
   await page.locator("#classification-review-confirmed").check();
   await page.locator('#animal-nutrition-review-form button[type="submit"]').click();
   await page.locator('#classification-review-list:has-text("Synthetic explicit classification and applicability review")').waitFor();
-  await page.locator('[data-nav-action="feeds"]').click(); await page.locator('[data-view="feeds"]:visible').waitFor();
+  await page.locator('[data-nav="home"]').click(); await page.locator('[data-nav-action="feeds"]').click();
+  await page.locator('[data-view="feeds"]:visible').waitFor();
   await page.locator("#diagnostic-selection-profile").selectOption({ index: 1 });
   await page.locator("#diagnostic-selection-animals").selectOption("diagnostic-test-animal");
   await page.locator("#diagnostic-selection-rationale").fill("Synthetic explicit review decision");
