@@ -154,10 +154,17 @@ try {
   assert.equal(await page.locator("#sync-count").textContent(), "0");
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
 
+  await page.locator("#auth-sign-in").click();
+  assert.match(await page.locator("#app-status").textContent(), /Enter your email and password/);
+  assert.equal(await page.locator("#app-status").getAttribute("role"), "alert");
+  assert.equal(await page.locator("#app-status").getAttribute("aria-live"), "assertive");
   await page.locator("#auth-email").fill("synthetic@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
+  assert.equal(await page.locator("#app-status").getAttribute("role"), "status");
+  assert.equal(await page.locator("#app-status").getAttribute("aria-live"), "polite");
+  assert.equal(await page.locator("#auth-status").getAttribute("role"), "status");
   assert.equal(await page.locator("#auth-card").isVisible(), false, "login form should disappear after authentication");
   assert.equal(await page.locator("#auth-lock-message").isVisible(), false, "landing content should disappear after authentication");
   assert.equal(await page.locator("#auth-restore").isVisible(), false, "cloud restore must stay unavailable");
@@ -168,6 +175,10 @@ try {
   assert.equal(await page.locator("#app-status").textContent(), statusBeforeRestoreAttempt,
     "cloud restore must have no active click handler");
   assert.equal(await page.locator('[data-view="home"]').isVisible(), true);
+  assert.equal(await page.locator('button[data-nav="home"]').getAttribute("aria-current"), "page");
+  assert.equal(await page.locator('button[data-nav][aria-current="page"]').count(), 1);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true,
+    "desktop layout must not overflow horizontally");
   await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: path.join(artifactDir, "home-desktop.png"), fullPage: true });
   await page.locator('button[data-nav="animals"]').click();
@@ -309,11 +320,24 @@ try {
   await visibleAnimal(page);
   await localState(page, id);
   await page.locator('button[data-nav="milk"]').click();
+  assert.equal(await page.locator('button[data-nav="milk"]').getAttribute("aria-current"), "page");
+  assert.equal(await page.locator('button[data-nav="home"]').getAttribute("aria-current"), null);
   assert.match(await page.locator("#milk-checklist-summary").textContent(), /1 of 1 active dairy cows have no morning record/);
   await page.locator('[data-milk-session="evening"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no evening record"));
   assert.match(await page.locator("#milk-checklist-summary").textContent(), /no evening record/);
   await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true,
+    "mobile layout must not overflow horizontally");
+  assert.equal(await page.locator("#app-status").evaluate((el) => parseFloat(getComputedStyle(el).fontSize) >= 12), true,
+    "mobile status text must remain at least 12px");
+  await page.locator('#milk-form button[type="submit"]').focus();
+  const focusedControlClearance = await page.evaluate(() => {
+    const focused = document.activeElement.getBoundingClientRect();
+    const navigation = document.querySelector(".bottom-nav").getBoundingClientRect();
+    return focused.bottom <= navigation.top;
+  });
+  assert.equal(focusedControlClearance, true, "fixed navigation must not obscure the focused control");
   await page.screenshot({ path: path.join(artifactDir, "milk-mobile.png"), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.locator("#milk-animal").selectOption(id);

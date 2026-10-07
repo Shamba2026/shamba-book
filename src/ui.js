@@ -188,6 +188,9 @@ function escapeHtml(value) {
 
 function setStatus(message, tone = "info") {
   const el = $("#app-status");
+  el.setAttribute("role", tone === "error" ? "alert" : "status");
+  el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
+  el.setAttribute("aria-atomic", "true");
   el.textContent = message;
   el.dataset.tone = tone;
 }
@@ -662,7 +665,10 @@ function showView(viewName) {
     section.style.setProperty("display", active ? "block" : "none", "important");
   });
   document.querySelectorAll("[data-nav]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.nav === viewName);
+    const active = button.dataset.nav === viewName;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
 }
 
@@ -1286,6 +1292,9 @@ async function initAuth() {
   const recoveryConfirm = $("#recovery-confirm");
   const recoveryButton = $("#recovery-claim-button");
   if (!statusEl || !emailEl || !passwordEl || !signInButton || !signOutButton || !restoreButton) return;
+  statusEl.setAttribute("role", "status");
+  statusEl.setAttribute("aria-live", "polite");
+  statusEl.setAttribute("aria-atomic", "true");
 
   let clientPromise = null;
   let claimController = null;
