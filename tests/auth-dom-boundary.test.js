@@ -15,6 +15,7 @@ function deferred() {
 function element() {
   const classes = new Set();
   const styles = new Map();
+  const attributes = new Map();
   return {
     hidden: false, textContent: "", innerHTML: "", value: "", src: "", dataset: {},
     listeners: {},
@@ -27,7 +28,9 @@ function element() {
     addEventListener(name, callback) { this.listeners[name] = callback; },
     reset() { this.value = ""; },
     replaceChildren() { this.innerHTML = ""; },
-    removeAttribute(name) { if (name === "src") this.src = ""; }
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    getAttribute(name) { return attributes.get(name) ?? null; },
+    removeAttribute(name) { attributes.delete(name); if (name === "src") this.src = ""; }
   };
 }
 
