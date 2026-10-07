@@ -32,7 +32,8 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
   await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator("#auth-email").fill("allocation@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click(); await page.locator("#account-actions:not([hidden])").waitFor();
   await page.evaluate(async (farmId) => { const db = await new Promise((resolve, reject) => { const request = indexedDB.open("ngombe-herdbook"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-    const review = { id: "group-ration-ui", farmId, profileId: "profile-ui", profileVersion: 1, sourceCitation: "TEST-ALLOCATION-UI",
+    const review = { id: "group-ration-ui", farmId, profileId: "profile-ui", profileName: "TEST allocation profile", profileVersion: 1,
+      animalClass: "LACTATING_DAIRY_COW", sourceCitation: "TEST-ALLOCATION-UI",
       selectionId: "selection-ui", calculatedAt: "2026-10-07T00:00:00Z", rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true,
       animalGroup: [{ id: "cow-a", animalCode: "TEST-COW-A" }, { id: "cow-b", animalCode: "TEST-COW-B" }], ration: { ingredients: [
         { feedId: "silage", feedName: "Synthetic silage", role: "forage", asFedKg: 20, dmKg: 6, meMJ: 60, cpKg: 0.6, costCents: 2000 },
