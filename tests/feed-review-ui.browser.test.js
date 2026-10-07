@@ -241,8 +241,11 @@ try {
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1, "classification review must not activate another profile");
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav="animals"]').click();
-  await page.locator('#herd-nutrition-readiness:has-text("1 of 1")').waitFor();
-  assert.match(await page.locator("#herd-nutrition-readiness").textContent(), /ATTENTION/,
+  await page.locator("#herd-nutrition-readiness").waitFor();
+  const herdReadinessText = await page.locator("#herd-nutrition-readiness").textContent();
+  console.log("herd nutrition readiness after requirement revocation:", herdReadinessText);
+  assert.match(herdReadinessText, /1 of 1/, "herd summary must include the retained eligible animal");
+  assert.match(herdReadinessText, /ATTENTION/,
     "revoked requirement evidence must prevent a complete herd evidence chain");
   await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
   await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
