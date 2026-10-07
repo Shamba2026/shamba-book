@@ -148,6 +148,8 @@ try {
   assert.equal(await page.locator("#auth-lock-message").isVisible(), true);
   assert.match(await page.locator("#auth-lock-message").textContent(), /Your herd records, clear and close at hand/);
   assert.equal(await page.locator(".landing-features article").count(), 4);
+  assert.match(await page.locator(".landing-hero").evaluate((el) => getComputedStyle(el).backgroundImage),
+    /landing-dairy-farm\.webp/, "signed-out hero must use the bundled farm visual");
   await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: path.join(artifactDir, "signed-out-landing.png"), fullPage: true });
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
