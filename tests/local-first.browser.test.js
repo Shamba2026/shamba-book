@@ -403,6 +403,13 @@ try {
   assert.equal(recoveryPreflight.changedRejected, true, "a self-consistent but stale backup must fail");
   assert.equal(recoveryPreflight.hashRejected, true, "a corrupt checksum must fail");
   await page.locator("#account-actions summary").click();
+  const accountGeometry = await page.evaluate(() => {
+    const header = document.querySelector(".header").getBoundingClientRect();
+    const menu = document.querySelector(".account-menu").getBoundingClientRect();
+    return { headerHeight: header.height, menuRight: menu.right, viewportWidth: innerWidth };
+  });
+  assert.equal(accountGeometry.headerHeight < 100, true, "opening Account must not expand the page header");
+  assert.equal(accountGeometry.menuRight <= accountGeometry.viewportWidth, true, "Account menu must stay in the viewport");
   await page.locator("#recovery-backup").setInputFiles({ name: "synthetic-evidence.json",
     mimeType: "application/json", buffer: Buffer.from(recoveryPreflight.backupJSON) });
   await page.locator('#recovery-result:has-text("Backup matches current local records")').waitFor();
@@ -466,6 +473,7 @@ try {
   }, recoveryPreflight.backupJSON);
   assert.equal(repeat.status, "already_claimed");
 
+  await page.locator("#account-actions summary").click();
   await page.locator('button[data-nav="finance"]').click();
   assert.equal(await page.locator("#finance-count").textContent(), "0 entries");
   await page.screenshot({ path: path.join(artifactDir, "finance-desktop.png"), fullPage: true });
