@@ -246,7 +246,11 @@ try {
   assert.match(herdReadinessText, /0 of 1/, "revoked evidence must exclude the retained animal from the complete count");
   assert.match(herdReadinessText, /ATTENTION/,
     "revoked requirement evidence must prevent a complete herd evidence chain");
-  await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
+  await page.locator('[data-nutrition-filter="complete"]').click();
+  assert.equal(await page.locator('[data-nutrition-animal-id="diagnostic-test-animal"]').isVisible(), false);
+  await page.locator('[data-nutrition-filter="attention"]').click();
+  await page.locator('[data-nutrition-animal-id="diagnostic-test-animal"]:visible').click();
+  await page.locator("#animal-profile:visible").waitFor();
   await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
   await page.locator('#classification-review-list:has-text("Synthetic explicit classification and applicability review")').waitFor();
   await page.locator('#requirement-ration-review-list:has-text("Synthetic human review requires additional ration evidence")').waitFor();

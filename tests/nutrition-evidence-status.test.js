@@ -47,8 +47,8 @@ const herd = summarizeHerdNutritionEvidence([
 ]);
 assert.deepEqual({ totalAnimals: herd.totalAnimals, completeAnimals: herd.completeAnimals,
   attentionAnimals: herd.attentionAnimals }, { totalAnimals: 2, completeAnimals: 1, attentionAnimals: 1 });
-assert.equal(herd.animals[0].evidenceComplete, true);
-assert.deepEqual(herd.animals[1].outstanding.map((row) => row.code),
+assert.equal(herd.animals[0].evidenceComplete, false, "animals needing review must be listed first");
+assert.deepEqual(herd.animals[0].outstanding.map((row) => row.code),
   ["CLASSIFICATION_REVIEW", "REQUIREMENT_CALCULATION", "COMPARISON_REVIEW"]);
 assert.equal(Object.isFrozen(herd.animals), true);
 
