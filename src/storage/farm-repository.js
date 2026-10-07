@@ -8,8 +8,8 @@ import { currentDiagnosticApplicabilityEvidence, validateAnimalNutritionClassifi
   validateAnimalNutritionReview } from "../domain/animal-nutrition-classification.js?build=20261006-03";
 import { calculateRequirements, validateRequirementApplicability, validateRequirementApproval,
   validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
-import { compareRequirementToRationEvidence, validateComparisonReview } from
-  "../domain/feed/requirement-ration-comparison.js?build=20261007-04";
+import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence, validateComparisonReview } from
+  "../domain/feed/requirement-ration-comparison.js?build=20261007-07";
 import { requireCurrentComparisonEvidence } from "../domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { validateRationAllocationEvidence } from "../domain/feed/ration-allocation.js?build=20261007-03";
 
@@ -351,10 +351,17 @@ export async function reviewRequirementRationComparison(requirementCalculationId
   requireCurrentComparisonEvidence({ requirement, rationReview, requirementProfile, latestClassification, selectedDiagnostic });
   const report = compareRequirementToRationEvidence(requirement, rationReview, requirement.animalId, allocationReview);
   const review = validateComparisonReview(input);
+  const priorReviews = farmRows(await getAll("nutrition_requirement_ration_reviews"));
+  const evidence = { requirementCalculationId: requirement.id, rationReviewId: rationReview.id,
+    allocationReviewId: report.attribution.allocation?.allocationReviewId || null };
+  const latest = latestComparisonReviewForEvidence(priorReviews, evidence);
+  const supersedesReviewId = String(input?.supersedesReviewId || "").trim() || null;
+  if (latest && supersedesReviewId !== latest.id) throw new Error("A new review must explicitly supersede the latest review of this exact evidence.");
+  if (!latest && supersedesReviewId) throw new Error("The review selected for supersession does not match this exact evidence.");
   const event = Object.freeze({ id: newId(), farmId, animalId: requirement.animalId,
     requirementCalculationId: requirement.id, rationReviewId: rationReview.id,
     allocationReviewId: report.attribution.allocation?.allocationReviewId || null,
-    report: structuredClone(report), ...review, reviewedAt: now() });
+    supersedesReviewId, report: structuredClone(report), ...review, reviewedAt: now() });
   await putAtomically([{ storeName: "nutrition_requirement_ration_reviews", value: event }]);
   return event;
 }
