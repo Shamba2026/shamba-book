@@ -241,6 +241,9 @@ try {
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1, "classification review must not activate another profile");
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav="animals"]').click();
+  await page.locator('#herd-nutrition-readiness:has-text("1 of 1")').waitFor();
+  assert.match(await page.locator("#herd-nutrition-readiness").textContent(), /ATTENTION/,
+    "revoked requirement evidence must prevent a complete herd evidence chain");
   await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
   await page.locator('#classification-list:has-text("TEST-CLASS-UI-001")').waitFor();
   await page.locator('#classification-review-list:has-text("Synthetic explicit classification and applicability review")').waitFor();
@@ -263,6 +266,7 @@ try {
   assert.equal(await page.locator("#requirement-ration-review-list").textContent(), "");
   assert.equal(await page.locator("#requirement-ration-review-current-summary").textContent(), "");
   assert.equal(await page.locator("#nutrition-evidence-status").textContent(), "");
+  assert.equal(await page.locator("#herd-nutrition-readiness").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);

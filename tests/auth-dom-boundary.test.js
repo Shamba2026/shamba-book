@@ -70,6 +70,7 @@ const context = vm.createContext({
   FarmRepository: {
     setActiveFarm() {},
     listAnimals: () => animalRead,
+    getHerdNutritionEvidenceReadiness: async () => ({ totalAnimals: 0, completeAnimals: 0, attentionAnimals: 0, animals: [] }),
     getHerdSummary: () => dashboardRead,
     getTodayMilkSummary: async () => ({ totalLiters: 0 }),
     listMilkRecordsForDate: async () => [],
