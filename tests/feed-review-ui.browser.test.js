@@ -218,6 +218,9 @@ try {
   const comparisonReviewRows = await rows(page, "nutrition_requirement_ration_reviews");
   assert.equal(comparisonReviewRows.length, 2);
   assert.ok(comparisonReviewRows.some((row) => row.supersedesReviewId), "new review must explicitly link to the retained prior review");
+  assert.match(await page.locator("#requirement-ration-review-current-summary").textContent(), /1 current decision/);
+  assert.match(await page.locator("#requirement-ration-review-list").textContent(), /SUPERSEDED/);
+  assert.match(await page.locator("#requirement-ration-review-list").textContent(), /CURRENT/);
   assert.equal((await rows(page, "feed_inventory_movements")).length, 1, "comparison must not consume inventory");
   assert.equal((await rows(page, "sync_queue")).length, 0, "comparison must not queue a cloud write");
   await page.locator('[data-nav="home"]').click(); await page.locator('[data-nav-action="feeds"]').click();
@@ -255,6 +258,7 @@ try {
   assert.equal(await page.locator("#requirement-calculation-list").textContent(), "");
   assert.equal(await page.locator("#requirement-ration-comparison-result").textContent(), "");
   assert.equal(await page.locator("#requirement-ration-review-list").textContent(), "");
+  assert.equal(await page.locator("#requirement-ration-review-current-summary").textContent(), "");
   assert.equal((await rows(page, "feed_observations")).length, 4, "sign-out must conceal, not delete, local evidence");
   await page.locator("#auth-email").fill("outsider@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await page.locator('#app-status:has-text("not a member")').waitFor(); assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false);

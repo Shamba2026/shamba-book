@@ -39,6 +39,22 @@ export function latestComparisonReviewForEvidence(reviews, evidence) {
     .sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)) || String(b.id).localeCompare(String(a.id)))[0] || null;
 }
 
+export function classifyComparisonReviewHistory(reviews) {
+  const rows = Array.isArray(reviews) ? reviews : [];
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const supersededBy = new Map();
+  for (const row of rows) {
+    const prior = byId.get(row.supersedesReviewId);
+    if (!prior) continue;
+    const sameEvidence = prior.requirementCalculationId === row.requirementCalculationId &&
+      prior.rationReviewId === row.rationReviewId &&
+      (prior.allocationReviewId || null) === (row.allocationReviewId || null);
+    if (sameEvidence) supersededBy.set(prior.id, row.id);
+  }
+  return rows.map((row) => Object.freeze({ ...row, isCurrent: !supersededBy.has(row.id),
+    supersededByReviewId: supersededBy.get(row.id) || null }));
+}
+
 export function compareRequirementToRationEvidence(requirement, rationReview, animalId, allocationEvidence = null) {
   const targetAnimalId = requiredText(animalId, "Animal ID");
   if (!requirement || !rationReview) throw new Error("Requirement and ration evidence are required.");
