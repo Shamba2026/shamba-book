@@ -184,10 +184,6 @@ try {
   await page.locator('#feed-inventory-list:has-text("100.5 kg remaining")').waitFor(); await page.locator('#feed-current-selections:has-text("Synthetic reviewed laboratory result")').waitFor();
   await page.locator('#diagnostic-current-selection:has-text("Synthetic explicit review decision")').waitFor();
   await page.locator('#requirement-profile-list:has-text("status: approved")').waitFor();
-  await page.locator("#requirement-revocation-profile").selectOption({ index: 1 });
-  await page.locator("#requirement-revocation-rationale").fill("Synthetic UI revocation review");
-  await page.locator("#requirement-revocation-confirmed").check(); await page.locator('#requirement-revocation-form button[type="submit"]').click();
-  await page.locator('#requirement-profile-list:has-text("status: revoked")').waitFor();
   await page.locator("[data-ration-batch-id]").fill("10"); await page.locator("#ration-daily-basis").check();
   await page.locator("#ration-review-calculate").click();
   await page.locator('#ration-review-result:has-text("2.500 kg")').waitFor();
@@ -211,6 +207,15 @@ try {
   assert.equal((await rows(page, "nutrition_requirement_ration_reviews")).length, 1);
   assert.equal((await rows(page, "feed_inventory_movements")).length, 1, "comparison must not consume inventory");
   assert.equal((await rows(page, "sync_queue")).length, 0, "comparison must not queue a cloud write");
+  await page.locator('[data-nav="home"]').click(); await page.locator('[data-nav-action="feeds"]').click();
+  await page.locator("#requirement-revocation-profile").selectOption({ index: 1 });
+  await page.locator("#requirement-revocation-rationale").fill("Synthetic UI revocation review");
+  await page.locator("#requirement-revocation-confirmed").check(); await page.locator('#requirement-revocation-form button[type="submit"]').click();
+  await page.locator('#requirement-profile-list:has-text("status: revoked")').waitFor();
+  await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
+  await page.locator("#animal-profile:visible").waitFor();
+  assert.equal(await page.locator("#requirement-ration-comparison-form").isVisible(), false,
+    "revoked requirement evidence must not remain available for a new comparison review");
   assert.equal(await page.locator("#requirement-calculation-form").isVisible(), false, "revoked profile must not remain calculable");
   assert.equal((await rows(page, "animal_nutrition_classification_reviews")).length, 1);
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1, "classification review must not activate another profile");
