@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { compareRequirementToRationEvidence, validateComparisonReview } from "../src/domain/feed/requirement-ration-comparison.js";
+import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence,
+  validateComparisonReview } from "../src/domain/feed/requirement-ration-comparison.js";
 
 const requirement = Object.freeze({ id: "req-1", farmId: "farm-1", animalId: "animal-1", profileId: "rp-1",
   profileVersion: 2, sourceCitation: "Requirement source p. 8", classificationId: "class-1",
@@ -44,6 +45,21 @@ assert.deepEqual(validateComparisonReview({ decision: "ACKNOWLEDGED", rationale:
 });
 assert.throws(() => validateComparisonReview({ decision: "APPROVED", rationale: "Not supported", reviewerUserId: "r", reviewerConfirmed: true }), /decision/);
 assert.throws(() => validateComparisonReview({ decision: "NEEDS_EVIDENCE_REVIEW", rationale: "Further evidence review is required.", reviewerUserId: "r", reviewerConfirmed: false }), /confirm/);
+
+const reviewHistory = [
+  { id: "review-old", requirementCalculationId: "req-1", rationReviewId: "ration-1", allocationReviewId: null,
+    reviewedAt: "2026-10-07T08:00:00.000Z" },
+  { id: "review-latest", requirementCalculationId: "req-1", rationReviewId: "ration-1", allocationReviewId: null,
+    reviewedAt: "2026-10-07T09:00:00.000Z" },
+  { id: "review-allocation", requirementCalculationId: "req-1", rationReviewId: "ration-1", allocationReviewId: "allocation-1",
+    reviewedAt: "2026-10-07T10:00:00.000Z" }
+];
+assert.equal(latestComparisonReviewForEvidence(reviewHistory,
+  { requirementCalculationId: "req-1", rationReviewId: "ration-1", allocationReviewId: null }).id, "review-latest");
+assert.equal(latestComparisonReviewForEvidence(reviewHistory,
+  { requirementCalculationId: "req-1", rationReviewId: "ration-1", allocationReviewId: "allocation-1" }).id, "review-allocation");
+assert.equal(latestComparisonReviewForEvidence(reviewHistory,
+  { requirementCalculationId: "req-other", rationReviewId: "ration-1" }), null);
 
 const groupRation = { ...ration, id: "ration-group", animalGroup: [{ id: "animal-1" }, { id: "animal-2" }],
   ration: { ...ration.ration, totalDMIKg: 16 } };

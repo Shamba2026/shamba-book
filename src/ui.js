@@ -2,11 +2,11 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-06";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261007-07";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
-import { compareRequirementToRationEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-04";
+import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-07";
 import { assessComparisonEvidenceCurrency } from "./domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
@@ -23,6 +23,7 @@ let activeUserId = null;
 let comparisonRequirementCalculations = [];
 let comparisonRationReviews = [];
 let currentComparisonEvidence = null;
+let comparisonReviewHistory = [];
 let allocationRationReviews = [];
 
 function clearFarmView() {
@@ -70,6 +71,9 @@ function clearFarmView() {
   comparisonRequirementCalculations = [];
   comparisonRationReviews = [];
   currentComparisonEvidence = null;
+  comparisonReviewHistory = [];
+  const supersessionNotice = $("#requirement-ration-review-supersedes");
+  if (supersessionNotice) { supersessionNotice.textContent = ""; supersessionNotice.hidden = true; }
   allocationRationReviews = [];
   ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
     $(selector).textContent = "";
@@ -804,6 +808,13 @@ function handleRequirementRationComparison(event) {
       rationEvidence?.allocationReview);
     currentComparisonEvidence = { requirementCalculationId: requirement.id, rationReviewId: rationEvidence.rationReview.id,
       allocationReviewId: rationEvidence.allocationReview?.id || null };
+    const latestReview = latestComparisonReviewForEvidence(comparisonReviewHistory, currentComparisonEvidence);
+    currentComparisonEvidence.supersedesReviewId = latestReview?.id || null;
+    const supersessionNotice = $("#requirement-ration-review-supersedes");
+    if (supersessionNotice) {
+      supersessionNotice.hidden = !latestReview;
+      supersessionNotice.textContent = latestReview ? "This new immutable decision will explicitly supersede the latest review of this exact retained evidence (" + latestReview.id + "). The earlier review remains in history." : "";
+    }
     const labels = { BELOW_DOCUMENTED_REQUIREMENT: "Below documented requirement", ABOVE_DOCUMENTED_REQUIREMENT: "Above documented requirement",
       MATCHES_DOCUMENTED_REQUIREMENT: "Matches documented requirement" };
     const rows = report.comparisons.map((row) => '<div class="evidence-row"><strong>' + escapeHtml(row.outputCode + " · " + labels[row.status]) +
@@ -821,16 +832,20 @@ function handleRequirementRationComparison(event) {
     setStatus("Read-only requirement and ration evidence comparison completed.", "success");
   } catch (error) {
     currentComparisonEvidence = null; $("#requirement-ration-review-form").hidden = true;
+    const supersessionNotice = $("#requirement-ration-review-supersedes");
+    if (supersessionNotice) { supersessionNotice.textContent = ""; supersessionNotice.hidden = true; }
     $("#requirement-ration-comparison-result").replaceChildren(); setStatus(error.message || String(error), "error");
   }
 }
 
 function renderRequirementRationReviews(reviews) {
+  comparisonReviewHistory = reviews;
   $("#requirement-ration-review-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
   $("#requirement-ration-review-empty").hidden = reviews.length > 0;
   $("#requirement-ration-review-list").innerHTML = reviews.map((row) => '<div class="evidence-row"><strong>' +
     escapeHtml(labelEnum(row.decision)) + '</strong><span>' + escapeHtml(row.rationale) + '</span><small>Requirement calculation ' +
-    escapeHtml(row.requirementCalculationId) + ' · ration review ' + escapeHtml(row.rationReviewId) + '</small><small>' +
+    escapeHtml(row.requirementCalculationId) + ' · ration review ' + escapeHtml(row.rationReviewId) +
+    (row.supersedesReviewId ? ' · supersedes ' + escapeHtml(row.supersedesReviewId) : '') + '</small><small>' +
     escapeHtml(row.reviewedAt) + ' · immutable human review · no ration approval</small></div>').join("");
 }
 
@@ -841,6 +856,7 @@ async function handleRequirementRationReviewSubmit(event) {
     await FarmRepository.reviewRequirementRationComparison(currentComparisonEvidence.requirementCalculationId,
       currentComparisonEvidence.rationReviewId, { decision: $("#requirement-ration-review-decision").value,
         allocationReviewId: currentComparisonEvidence.allocationReviewId,
+        supersedesReviewId: currentComparisonEvidence.supersedesReviewId,
         rationale: $("#requirement-ration-review-rationale").value, reviewerUserId: activeUserId,
         reviewerConfirmed: $("#requirement-ration-review-confirmed").checked });
     if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
@@ -1441,6 +1457,13 @@ async function refreshAll(generation = accessGeneration) {
 
 export async function initApp() {
   setAppAccess(false);
+  if (!$("#requirement-ration-review-supersedes")) {
+    const notice = document.createElement("p");
+    notice.id = "requirement-ration-review-supersedes";
+    notice.className = "muted";
+    notice.hidden = true;
+    $("#requirement-ration-review-form").prepend(notice);
+  }
   showView("home");
   $("#milk-date").value = toLocalDateString();
   $("#weight-date").value = toLocalDateString();

@@ -68,6 +68,15 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
     const comparisonReview = await repository.reviewRequirementRationComparison(calculation.id, "ration-a", {
       decision: "NEEDS_EVIDENCE_REVIEW", rationale: "Synthetic comparison requires further evidence review.",
       reviewerUserId: "reviewer", reviewerConfirmed: true });
+    let implicitReplacementRejected = false;
+    try { await repository.reviewRequirementRationComparison(calculation.id, "ration-a", {
+      decision: "ACKNOWLEDGED", rationale: "Replacement without an explicit link must fail.",
+      reviewerUserId: "reviewer", reviewerConfirmed: true }); }
+    catch { implicitReplacementRejected = true; }
+    const supersedingReview = await repository.reviewRequirementRationComparison(calculation.id, "ration-a", {
+      decision: "ACKNOWLEDGED", rationale: "Synthetic corrected review explicitly supersedes the earlier decision.",
+      reviewerUserId: "reviewer", reviewerConfirmed: true, supersedesReviewId: comparisonReview.id });
+    const retainedComparisonReviews = await repository.listRequirementRationComparisonReviews("cow-a");
     const revoked = await repository.revokeNutritionRequirementProfile(draft.id,
       { reviewerUserId: "reviewer", rationale: "Synthetic revocation", reviewerConfirmed: true });
     let revokedRejected = false; try { await repository.calculateAnimalNutritionRequirements(draft.id, "cow-a", { confirmed: true, initiatedByUserId: "tester" }); }
@@ -84,7 +93,8 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
     const db = await localDb.openLocalDatabase(); const stores = [...db.objectStoreNames]; const version = db.version; db.close();
     return { version, stores, draftRejected, unreviewedRejected, applicability, approved, calculation, groupComparisonRejected,
       comparisonRollbackRejected,
-      comparisonRowsAfterRollback, comparisonReview, revoked, revokedRejected, revokedComparisonRejected,
+      comparisonRowsAfterRollback, comparisonReview, implicitReplacementRejected, supersedingReview, retainedComparisonReviews,
+      revoked, revokedRejected, revokedComparisonRejected,
       hidden, calculationsHidden, comparisonReviewsHidden, crossFarmReviewRejected,
       records: await localDb.getAll("records"), queue: await localDb.getAll("sync_queue"), movements: await localDb.getAll("feed_inventory_movements") };
   });
@@ -95,6 +105,9 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
   assert.equal(result.draftRejected, true); assert.equal(result.unreviewedRejected, true); assert.equal(result.approved.profile.status, "approved");
   assert.equal(result.applicability.decision, "APPLICABLE"); assert.equal(result.calculation.outputs[0].value, 10);
   assert.equal(result.comparisonReview.decision, "NEEDS_EVIDENCE_REVIEW");
+  assert.equal(result.implicitReplacementRejected, true);
+  assert.equal(result.supersedingReview.supersedesReviewId, result.comparisonReview.id);
+  assert.equal(result.retainedComparisonReviews.length, 2, "supersession must preserve both immutable reviews");
   assert.equal(result.groupComparisonRejected, true);
   assert.equal(result.comparisonReview.report.comparisons[0].status, "BELOW_DOCUMENTED_REQUIREMENT");
   assert.equal(result.comparisonRollbackRejected, true); assert.equal(result.comparisonRowsAfterRollback.length, 0);

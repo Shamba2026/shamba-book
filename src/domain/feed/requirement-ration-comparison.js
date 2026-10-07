@@ -31,6 +31,14 @@ export function validateComparisonReview(input) {
   return Object.freeze({ decision: input.decision, rationale, reviewerUserId });
 }
 
+export function latestComparisonReviewForEvidence(reviews, evidence) {
+  const allocationReviewId = String(evidence?.allocationReviewId || "").trim() || null;
+  return (Array.isArray(reviews) ? reviews : []).filter((row) =>
+    row.requirementCalculationId === evidence?.requirementCalculationId && row.rationReviewId === evidence?.rationReviewId &&
+    (row.allocationReviewId || null) === allocationReviewId)
+    .sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)) || String(b.id).localeCompare(String(a.id)))[0] || null;
+}
+
 export function compareRequirementToRationEvidence(requirement, rationReview, animalId, allocationEvidence = null) {
   const targetAnimalId = requiredText(animalId, "Animal ID");
   if (!requirement || !rationReview) throw new Error("Requirement and ration evidence are required.");
