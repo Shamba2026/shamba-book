@@ -1,677 +1,4 @@
-import { APP_CONFIG } from "./config.js";
-import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
-import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
-import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-04";
-import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
-import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
-import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
-import { compareRequirementToRationEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-02";
-import { getAuthClient } from "./auth.js";
-import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
-import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
-import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20260927-02";
-import { startSyncLoop } from "./sync/sync-engine.js?build=20260927-02";
-
-const $ = (selector) => document.querySelector(selector);
-let signedIn = false;
-let accessGeneration = 0;
-let selectedDiagnosticProfile = null;
-let selectedAnimalId = null;
-let activeUserId = null;
-let comparisonRequirementCalculations = [];
-let comparisonRationReviews = [];
-let currentComparisonEvidence = null;
-let allocationRationReviews = [];
-
-function clearFarmView() {
-  feedRefreshGeneration += 1;
-  ["#animal-form", "#milk-form", "#weight-form", "#breeding-form", "#health-form", "#finance-form",
-    "#feed-form", "#feed-source-form", "#feed-observation-form", "#feed-cost-source-form", "#feed-batch-form",
-    "#feed-movement-form", "#feed-selection-form", "#ration-review-form", "#diagnostic-profile-form",
-    "#diagnostic-selection-form", "#diagnostic-archive-form", "#animal-nutrition-classification-form",
-    "#animal-nutrition-review-form", "#requirement-profile-form", "#requirement-approval-form",
-    "#requirement-revocation-form", "#requirement-applicability-form", "#requirement-calculation-form",
-    "#requirement-ration-comparison-form", "#requirement-ration-review-form", "#ration-allocation-form"].forEach((selector) => {
-    $(selector).reset();
-  });
-  $("#milk-value-preview").textContent = "â€”";
-  $("#milk-checklist").replaceChildren();
-  $("#milk-checklist-summary").textContent = "";
-  $("#animal-list").replaceChildren();
-  $("#animals-empty").hidden = false;
-  $("#animal-profile").hidden = true;
-  selectedAnimalId = null;
-  $("#classification-list").replaceChildren();
-  $("#classification-count").textContent = "0 observations";
-  $("#classification-empty").hidden = false;
-  $("#classification-review-list").replaceChildren();
-  $("#classification-review-count").textContent = "0 reviews";
-  $("#classification-review-empty").hidden = false;
-  $("#animal-nutrition-review-form").hidden = true;
-  $("#classification-review-version").replaceChildren();
-  $("#classification-review-profile").replaceChildren();
-  $("#requirement-applicability-list").replaceChildren();
-  $("#requirement-applicability-count").textContent = "0 reviews";
-  $("#requirement-applicability-empty").hidden = false;
-  $("#requirement-applicability-form").hidden = true;
-  $("#requirement-calculation-list").replaceChildren();
-  $("#requirement-calculation-count").textContent = "0 calculations";
-  $("#requirement-calculation-empty").hidden = false;
-  $("#requirement-calculation-form").hidden = true;
-  $("#requirement-ration-comparison-form").hidden = true;
-  $("#requirement-ration-comparison-empty").hidden = true;
-  $("#requirement-ration-comparison-result").replaceChildren();
-  $("#requirement-ration-review-form").hidden = true;
-  $("#requirement-ration-review-list").replaceChildren();
-  $("#requirement-ration-review-count").textContent = "0 reviews";
-  $("#requirement-ration-review-empty").hidden = false;
-  comparisonRequirementCalculations = [];
-  comparisonRationReviews = [];
-  currentComparisonEvidence = null;
-  allocationRationReviews = [];
-  ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
-    $(selector).textContent = "";
-  });
-  const image = $("#profile-photo");
-  if (image.src) URL.revokeObjectURL(image.src);
-  image.removeAttribute("src");
-  image.hidden = true;
-  ["#milk-animal", "#weight-animal", "#health-animal", "#breeding-animal"].forEach((selector) => {
-    $(selector).replaceChildren();
-  });
-  ["#stat-total", "#stat-dairy", "#stat-bulls", "#stat-calves", "#sync-count"].forEach((selector) => {
-    $(selector).textContent = "0";
-  });
-  $("#today-milk").textContent = "0.0 L";
-  $("#today-value").textContent = "KSh 0";
-  $("#week-period").textContent = "â€”";
-  $("#finance-list").replaceChildren();
-  $("#finance-category-summary").replaceChildren();
-  $("#finance-period").value = "month";
-  $("#finance-empty").hidden = false;
-  for (const id of ["#finance-income", "#finance-expense", "#finance-net"]) $(id).textContent = "KSh 0.00";
-  $("#finance-count").textContent = "0 entries";
-  selectedFeedId = null;
-  ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list",
-    "#feed-movement-list", "#feed-current-selections", "#ration-review-rows", "#ration-review-result",
-    "#diagnostic-profile-list", "#diagnostic-current-selection", "#diagnostic-history-list",
-    "#requirement-profile-list", "#requirement-review-list", "#ration-allocation-rows",
-    "#ration-allocation-list"].forEach((selector) => $(selector).replaceChildren());
-  selectedDiagnosticProfile = null;
-  $("#diagnostic-profile-count").textContent = "0 profiles";
-  $("#diagnostic-profile-empty").hidden = false;
-  $("#diagnostic-selection-form").hidden = true;
-  $("#diagnostic-archive-form").hidden = true;
-  $("#diagnostic-history-count").textContent = "0 reviews";
-  $("#diagnostic-history-empty").hidden = false;
-  $("#requirement-profile-count").textContent = "0 profiles";
-  $("#requirement-profile-empty").hidden = false;
-  $("#requirement-review-count").textContent = "0 reviews";
-  $("#requirement-approval-form").hidden = true;
-  $("#requirement-revocation-form").hidden = true;
-  ["#feed-observation-feed", "#feed-observation-source", "#feed-batch-feed", "#feed-batch-cost-source",
-    "#feed-movement-batch", "#feed-selection-observation", "#diagnostic-selection-profile",
-    "#diagnostic-selection-animals", "#diagnostic-archive-profile", "#diagnostic-supersedes",
-    "#requirement-approval-profile", "#requirement-revocation-profile", "#requirement-applicability-profile",
-    "#requirement-applicability-classification", "#requirement-calculation-profile", "#requirement-ration-calculation",
-    "#requirement-ration-review"].forEach((selector) => $(selector).replaceChildren());
-  $("#feed-count").textContent = "0 feeds";
-  $("#feed-source-count").textContent = "0 sources";
-  $("#feed-cost-source-count").textContent = "0 sources";
-  $("#feed-inventory-count").textContent = "0 batches";
-  $("#feed-movement-count").textContent = "0 movements";
-  $("#feed-empty").hidden = false;
-  $("#feed-source-empty").hidden = false;
-  $("#feed-cost-source-empty").hidden = false;
-  $("#feed-inventory-empty").hidden = false;
-  $("#feed-movement-empty").hidden = false;
-  $("#feed-selection-form").hidden = true;
-  $("#ration-review-empty").hidden = false;
-  $("#ration-review-calculate").disabled = true;
-  $("#ration-allocation-form").hidden = true;
-  $("#ration-allocation-review").replaceChildren();
-  $("#ration-allocation-count").textContent = "0 reviews";
-  $("#ration-allocation-empty").hidden = false;
-  $("#feed-profile-empty").hidden = false;
-  $("#feed-profile-empty").textContent = "Choose a feed from the farm library to review its observations.";
-  $("#feed-profile-title").textContent = "Select a feed";
-  $("#feed-cost-date").value = toLocalDateString();
-  $("#feed-batch-date").value = toLocalDateString();
-  $("#feed-movement-date").value = toLocalDateString();
-  $("#feed-batch-currency").value = "KES";
-}
-
-const canShowFarmData = (generation) => signedIn && generation === accessGeneration;
-
-function setAppAccess(unlocked) {
-  document.querySelectorAll(".auth-gated").forEach((el) => {
-    el.classList.toggle("auth-unlocked", unlocked);
-    if (el.matches("[data-view]")) {
-      el.hidden = !unlocked || el.dataset.view !== "home";
-      el.style.setProperty("display", unlocked && el.dataset.view === "home" ? "block" : "none", "important");
-    } else if (el.classList.contains("bottom-nav")) {
-      el.style.setProperty("display", unlocked ? "grid" : "none", "important");
-    }
-  });
-  const lockMessage = $("#auth-lock-message");
-  if (lockMessage) {
-    lockMessage.hidden = unlocked;
-    lockMessage.style.setProperty("display", unlocked ? "none" : "block", "important");
-  }
-  if (!unlocked) {
-    const status = $("#app-status");
-    if (status) status.textContent = "Sign in required";
-  }
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function setStatus(message, tone = "info") {
-  const el = $("#app-status");
-  el.textContent = message;
-  el.dataset.tone = tone;
-}
-
-const feedRoleLabels = { forage: "Forage", concentrate: "Concentrate", mineral: "Mineral", other: "Other" };
-const nutrientLabels = { DM: "Dry matter", ME: "Metabolizable energy", CP: "Crude protein", NDF: "NDF",
-  ADF: "ADF", STARCH: "Starch", FAT: "Fat", ASH: "Ash", CA: "Calcium", P: "Phosphorus" };
-const evidenceClasses = [["VERIFIED_LAB", "Verified laboratory"], ["RESEARCH_SUPPORTED", "Research supported"],
-  ["MANUFACTURER_DECLARED", "Manufacturer declared"], ["FARM_MEASURED", "Farm measured"],
-  ["CALCULATED", "Calculated"], ["MODEL_ESTIMATED", "Model estimated"],
-  ["RANGE_ESTIMATE", "Range estimate"], ["PROVISIONAL", "Provisional"], ["UNKNOWN", "Unknown"]];
-let selectedFeedId = null;
-let rationReviewRows = [];
-let feedRefreshGeneration = 0;
-
-function selectNutritionMetric() {
-  const nutrient = $("#feed-observation-nutrient").value;
-  const basis = nutrient === "DM" ? "AS_FED" : "DRY_MATTER";
-  const units = nutrient === "DM" ? [["PERCENT", "% as fed"], ["G_PER_KG_AS_FED", "g/kg as fed"]] :
-    nutrient === "ME" ? [["MJ_PER_KG_DM", "MJ/kg DM"]] : [["PERCENT", "% DM"], ["G_PER_KG_DM", "g/kg DM"]];
-  $("#feed-observation-basis").replaceChildren(new Option(basis === "AS_FED" ? "As fed" : "Dry matter", basis));
-  $("#feed-observation-unit").replaceChildren(...units.map(([value, label]) => new Option(label, value)));
-}
-
-function renderFeedOptions(feeds, sources) {
-  const feedOptions = [new Option("Choose feed", "")].concat(feeds.map((feed) => new Option(feed.name, feed.id)));
-  $("#feed-observation-feed").replaceChildren(...feedOptions);
-  const sourceOptions = [new Option("Choose source", "")].concat(sources.map((source) => new Option(source.title, source.id)));
-  $("#feed-observation-source").replaceChildren(...sourceOptions);
-}
-
-function renderInventoryOptions(feeds, costSources) {
-  $("#feed-batch-feed").replaceChildren(new Option("Choose feed", ""),
-    ...feeds.map((feed) => new Option(feed.name, feed.id)));
-  $("#feed-batch-cost-source").replaceChildren(new Option("Choose cost source", ""),
-    ...costSources.map((source) => new Option(source.reference, source.id)));
-}
-
-function renderMovementOptions(batches) {
-  $("#feed-movement-batch").replaceChildren(new Option("Choose inventory batch", ""), ...batches.map((batch) =>
-    new Option((batch.feed?.name || "Feed unavailable") + " Â· " + batch.remainingQuantityKg + " kg remaining", batch.id)));
-}
-
-function formatBatchMoney(cents, currency) {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
-}
-
-function renderRationReview(batches, selectionsByFeed) {
-  rationReviewRows = batches.map((batch) => ({ batch, feed: batch.feed, selections: selectionsByFeed.get(batch.feedId) || {} }));
-  $("#ration-review-rows").innerHTML = rationReviewRows.map((row) => {
-    const missing = ["DM", "ME", "CP"].filter((code) => !row.selections[code]?.observation);
-    return '<label class="ration-row"><span><strong>' + escapeHtml(row.feed?.name || "Feed unavailable") + '</strong><small>' +
-      escapeHtml(row.batch.remainingQuantityKg + " kg available" + (missing.length ? " Â· Missing selected " + missing.join(", ") : " Â· Evidence ready")) +
-      '</small></span><input type="number" min="0" max="' + escapeHtml(row.batch.remainingQuantityKg) +
-      '" step="0.001" value="0" data-ration-batch-id="' + escapeHtml(row.batch.id) + '" aria-label="As-fed kg for ' +
-      escapeHtml(row.feed?.name || "feed") + '" ' + (missing.length ? "disabled" : "") + '></label>';
-  }).join("");
-  const ready = rationReviewRows.some((row) => ["DM", "ME", "CP"].every((code) => row.selections[code]?.observation));
-  $("#ration-review-empty").hidden = ready;
-  $("#ration-review-calculate").disabled = !ready;
-  $("#ration-review-result").replaceChildren();
-}
-
-async function handleRationReview(event) {
-  event.preventDefault();
-  const generation = accessGeneration;
-  try {
-    const quantities = new Map([...document.querySelectorAll("[data-ration-batch-id]")]
-      .map((input) => [input.dataset.rationBatchId, Number(input.value || 0)]));
-    const rows = rationReviewRows.map((row) => ({ ...row,
-      asFedKg: quantities.get(row.batch.id) || 0 }))
-      .filter((row) => row.asFedKg > 0);
-    const ration = buildReadOnlyRation(rows);
-    const forageShare = ration.forageDMKg / ration.totalDMIKg * 100;
-    const diagnostic = selectedDiagnosticProfile ? evaluateRation(ration, selectedDiagnosticProfile.profile) : null;
-    if (diagnostic) await FarmRepository.recordDiagnosticWarningReview(ration, diagnostic, {
-      rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: $("#ration-daily-basis").checked
-    });
-    if (!canShowFarmData(generation)) return;
-    const messages = { LOW_FORAGE_DM_SHARE: "Below the selected profileâ€™s minimum forage dry-matter share.",
-      LOW_ME_DENSITY: "Below the selected profileâ€™s minimum ME density.",
-      LOW_CP_PERCENT_DM: "Below the selected profileâ€™s minimum crude-protein concentration.",
-      NO_CONFIGURED_THRESHOLD_TRIGGERED: "No selected-profile threshold was triggered. This is not proof that the ration meets the animalâ€™s requirements." };
-    const diagnosticHtml = diagnostic ? '<div class="feed-list">' + diagnostic.map((finding) => '<div class="evidence-row"><strong>' +
-      escapeHtml(messages[finding.code]) + '</strong></div>').join("") + '</div><p class="muted">Applied ' +
-      escapeHtml(selectedDiagnosticProfile.profile.name + " v" + selectedDiagnosticProfile.profile.version + " Â· " +
-        selectedDiagnosticProfile.profile.animalClass.replaceAll("_", " ")) + '.</p>' :
-      '<p class="muted">No diagnostic profile selected; no nutritional warnings were applied.</p>';
-    $("#ration-review-result").innerHTML = '<div class="ration-metrics"><div><small>As fed</small><strong>' +
-      escapeHtml(ration.totalAsFedKg.toFixed(3)) + ' kg</strong></div><div><small>Dry matter</small><strong>' +
-      escapeHtml(ration.totalDMIKg.toFixed(3)) + ' kg</strong></div><div><small>ME density</small><strong>' +
-      escapeHtml(ration.meDensityMJPerKgDM.toFixed(2)) + ' MJ/kg DM</strong></div><div><small>Crude protein</small><strong>' +
-      escapeHtml(ration.cpPercentDM.toFixed(2)) + '% DM</strong></div><div><small>Forage DM share</small><strong>' +
-      escapeHtml(forageShare.toFixed(1)) + '%</strong></div><div><small>Estimated cost</small><strong>' +
-      escapeHtml(formatBatchMoney(ration.totalCostCents, ration.currencyCode)) + '</strong></div></div>' + diagnosticHtml + '<p class="muted">Calculation only. No ration save or inventory movement was created.</p>';
-    if (diagnostic) renderDiagnosticHistory(await FarmRepository.listDiagnosticWarningHistory());
-    setStatus("Read-only ration calculation completed.", "success");
-  } catch (error) { setStatus(error.message || String(error), "error"); $("#ration-review-result").replaceChildren(); }
-}
-
-function renderDiagnosticHistory(history) {
-  $("#diagnostic-history-count").textContent = history.length + (history.length === 1 ? " review" : " reviews");
-  $("#diagnostic-history-empty").hidden = history.length > 0;
-  $("#diagnostic-history-list").innerHTML = history.map((row) => '<div class="evidence-row"><strong>' +
-    escapeHtml(row.profileName + " v" + row.profileVersion) + '</strong><small>' + escapeHtml(row.calculatedAt) +
-    ' Â· ' + escapeHtml(row.animalClass.replaceAll("_", " ")) + '</small><small>Group: ' +
-    escapeHtml(row.animalGroup.map((animal) => animal.animalCode).join(", ")) + '</small><small>Findings: ' +
-    escapeHtml(row.findingCodes.join(", ")) + '</small><small>Citation: ' + escapeHtml(row.sourceCitation) + '</small></div>').join("");
-}
-
-function renderAllocationInputs() {
-  const review = allocationRationReviews.find((row) => row.id === $("#ration-allocation-review").value);
-  if (!review) { $("#ration-allocation-rows").replaceChildren(); return; }
-  $("#ration-allocation-rows").innerHTML = review.animalGroup.map((animal) => '<div class="evidence-row"><strong>' +
-    escapeHtml(animal.animalCode || animal.id) + '</strong>' + review.ration.ingredients.map((ingredient) =>
-      '<label class="field"><span>' + escapeHtml(ingredient.feedName) + ' (kg as fed)</span><input type="number" min="0" step="0.001" required data-allocation-animal="' +
-      escapeHtml(animal.id) + '" data-allocation-feed="' + escapeHtml(ingredient.feedId) + '"></label>').join("") + '</div>').join("");
-}
-
-function renderRationAllocationEvidence(history, reviews) {
-  allocationRationReviews = history.filter((row) => row.animalGroup?.length > 1 && row.ration?.ingredients?.length);
-  $("#ration-allocation-form").hidden = allocationRationReviews.length === 0;
-  $("#ration-allocation-review").replaceChildren(new Option("Choose group ration review", ""), ...allocationRationReviews.map((row) =>
-    new Option(row.calculatedAt + " Â· " + row.animalGroup.map((animal) => animal.animalCode || animal.id).join(", "), row.id)));
-  $("#ration-allocation-rows").replaceChildren();
-  $("#ration-allocation-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
-  $("#ration-allocation-empty").hidden = allocationRationReviews.length > 0 || reviews.length > 0;
-  $("#ration-allocation-list").innerHTML = reviews.map((review) => '<div class="evidence-row"><strong>' +
-    escapeHtml(review.allocationMethod.replaceAll("_", " ")) + '</strong><small>' + escapeHtml(review.reviewedAt) +
-    ' Â· ' + escapeHtml(review.allocations.length + " animals") + '</small><small>' + escapeHtml(review.rationale) +
-    '</small><small>' + escapeHtml(review.allocations.map((row) => row.animalId + ": " + row.ration.totalAsFedKg + " kg as fed").join(" Â· ")) + '</small></div>').join("");
-}
-
-async function handleRationAllocationSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    const rationReviewId = $("#ration-allocation-review").value;
-    const review = allocationRationReviews.find((row) => row.id === rationReviewId);
-    if (!review) throw new Error("Choose a compatible group ration review.");
-    const allocations = review.animalGroup.map((animal) => ({ animalId: animal.id,
-      ingredients: review.ration.ingredients.map((ingredient) => ({ feedId: ingredient.feedId,
-        asFedKg: Number(document.querySelector('[data-allocation-animal="' + CSS.escape(animal.id) + '"][data-allocation-feed="' + CSS.escape(ingredient.feedId) + '"]').value) })) }));
-    await FarmRepository.recordRationAllocationEvidence(rationReviewId, { allocationMethod: "DOCUMENTED_INGREDIENT_WEIGHTS",
-      rationale: $("#ration-allocation-rationale").value, reviewerUserId: activeUserId,
-      reviewerConfirmed: $("#ration-allocation-confirmed").checked, allocations });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); $("#ration-allocation-rows").replaceChildren(); await refreshFeedWorkspace(generation);
-    if (canShowFarmData(generation)) setStatus("Per-animal ration allocation evidence recorded.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-function renderDiagnosticProfiles(profiles, selected, animals, history) {
-  selectedDiagnosticProfile = selected;
-  $("#diagnostic-profile-count").textContent = profiles.length + (profiles.length === 1 ? " profile" : " profiles");
-  $("#diagnostic-profile-empty").hidden = profiles.length > 0;
-  $("#diagnostic-profile-list").innerHTML = profiles.map((profile) => '<div class="evidence-row"><strong>' +
-    escapeHtml(profile.name + " v" + profile.version) + '</strong><small>' + escapeHtml(profile.animalClass.replaceAll("_", " ")) +
-    '</small><small>Status: ' + escapeHtml(profile.status) + (profile.supersedesProfileId ? " Â· superseding version" : "") +
-    '</small><small>' + escapeHtml(profile.applicability) + '</small><small>' + escapeHtml(profile.sourceTitle + " â€” " + profile.sourceCitation) +
-    '</small><small>Thresholds: forage ' + escapeHtml(profile.minimumForageDMFraction) + ', ME ' +
-    escapeHtml(profile.minimumMEDensityMJPerKgDM) + ', CP ' + escapeHtml(profile.minimumCPPercentDM) + '%</small></div>').join("");
-  const activeProfiles = profiles.filter((profile) => profile.status !== "archived");
-  $("#diagnostic-selection-form").hidden = activeProfiles.length === 0 || animals.length === 0;
-  $("#diagnostic-archive-form").hidden = activeProfiles.length === 0;
-  $("#diagnostic-selection-profile").replaceChildren(new Option("Choose a profile", ""), ...activeProfiles.map((profile) =>
-    new Option(profile.name + " v" + profile.version + " Â· " + profile.animalClass.replaceAll("_", " "), profile.id)));
-  $("#diagnostic-selection-animals").replaceChildren(...animals.map((animal) => new Option(animal.animalCode + " Â· " + animal.type.replaceAll("_", " "), animal.id)));
-  $("#diagnostic-archive-profile").replaceChildren(new Option("Choose a profile", ""), ...activeProfiles.map((profile) =>
-    new Option(profile.name + " v" + profile.version, profile.id)));
-  $("#diagnostic-supersedes").replaceChildren(new Option("New profile", ""), ...activeProfiles.map((profile) =>
-    new Option(profile.name + " v" + profile.version, profile.id)));
-  $("#diagnostic-current-selection").innerHTML = selected ? '<div class="evidence-row selection-current"><strong>Active for warnings: ' +
-    escapeHtml(selected.profile.name + " v" + selected.profile.version) + '</strong><small>' + escapeHtml(selected.profile.animalClass.replaceAll("_", " ")) +
-    '</small><small>' + escapeHtml(selected.profile.applicability) + '</small><small>Rationale: ' + escapeHtml(selected.selection.rationale) + '</small></div>' :
-    '<p class="muted">No profile approved for a confirmed animal group. Nutritional warnings are inactive.</p>';
-  renderDiagnosticHistory(history);
-}
-
-const requirementUnits = { DMI_KG_DAY: "kg DM/day", ME_MJ_DAY: "MJ ME/day", NEL_MCAL_DAY: "Mcal NEL/day",
-  CP_KG_DAY: "kg CP/day", MP_G_DAY: "g MP/day" };
-
-function renderRequirementProfiles(profiles, reviews) {
-  $("#requirement-profile-count").textContent = profiles.length + (profiles.length === 1 ? " profile" : " profiles");
-  $("#requirement-profile-empty").hidden = profiles.length > 0;
-  $("#requirement-profile-list").innerHTML = profiles.map((profile) => '<div class="evidence-row"><strong>' +
-    escapeHtml(profile.name + " v" + profile.version) + '</strong><small>' + escapeHtml(labelEnum(profile.animalClass)) +
-    ' Â· ' + escapeHtml(profile.nutrientSystem) + ' Â· status: ' + escapeHtml(profile.status) + '</small><small>' +
-    escapeHtml(profile.sourceTitle + " â€” " + profile.sourceCitation) + '</small><small>' + escapeHtml(profile.applicability) +
-    '</small><small>Equations: ' + escapeHtml(profile.equations.map((row) => row.outputCode + " Â· " + row.equationReference).join("; ")) +
-    '</small></div>').join("");
-  const drafts = profiles.filter((row) => row.status === "draft"); const approved = profiles.filter((row) => row.status === "approved");
-  $("#requirement-approval-form").hidden = drafts.length === 0; $("#requirement-revocation-form").hidden = approved.length === 0;
-  $("#requirement-approval-profile").replaceChildren(new Option("Choose a draft", ""), ...drafts.map((row) => new Option(row.name + " v" + row.version, row.id)));
-  $("#requirement-revocation-profile").replaceChildren(new Option("Choose an approved profile", ""), ...approved.map((row) => new Option(row.name + " v" + row.version, row.id)));
-  $("#requirement-review-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
-  $("#requirement-review-list").innerHTML = reviews.map((row) => '<div class="evidence-row"><strong>' +
-    escapeHtml(row.decision + " Â· v" + row.profileVersion) + '</strong><small>' + escapeHtml(row.rationale) +
-    '</small><small>' + escapeHtml(row.reviewedAt) + ' Â· immutable audit event</small></div>').join("");
-}
-
-function requirementTermsFromForm() {
-  const terms = []; const constant = $("#requirement-constant").value; const weight = $("#requirement-weight-coefficient").value;
-  const milk = $("#requirement-milk-coefficient").value;
-  if (constant !== "") terms.push({ factor: "CONSTANT", coefficient: constant, exponent: 0 });
-  if (weight !== "") terms.push({ factor: "LIVE_WEIGHT_KG", coefficient: weight, exponent: $("#requirement-weight-exponent").value });
-  if (milk !== "") terms.push({ factor: "AVERAGE_DAILY_MILK_LITERS", coefficient: milk, exponent: $("#requirement-milk-exponent").value });
-  return terms;
-}
-
-async function handleRequirementProfileSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget; const outputCode = $("#requirement-output").value;
-  try { await FarmRepository.createNutritionRequirementProfile({ name: $("#requirement-name").value,
-      version: $("#requirement-version").value, animalClass: $("#requirement-animal-class").value,
-      nutrientSystem: $("#requirement-system").value, publicationYear: $("#requirement-year").value,
-      applicability: $("#requirement-applicability").value, sourceTitle: $("#requirement-source-title").value,
-      sourceCitation: $("#requirement-citation").value, sourceUrl: $("#requirement-url").value,
-      supersessionRationale: $("#requirement-supersession-rationale").value,
-      equations: [{ outputCode, outputUnit: requirementUnits[outputCode], equationReference: $("#requirement-equation-reference").value,
-        terms: requirementTermsFromForm() }] });
-    if (!canShowFarmData(generation)) return; form.reset(); $("#requirement-weight-exponent").value = "1"; $("#requirement-milk-exponent").value = "1";
-    await refreshFeedWorkspace(generation); setStatus("Requirement profile saved as an inactive draft.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleRequirementApprovalSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try { await FarmRepository.approveNutritionRequirementProfile($("#requirement-approval-profile").value,
-      { reviewerUserId: activeUserId, rationale: $("#requirement-approval-rationale").value,
-        reviewerConfirmed: $("#requirement-approval-confirmed").checked });
-    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Requirement profile approved. No recommendation was generated.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleRequirementRevocationSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try { await FarmRepository.revokeNutritionRequirementProfile($("#requirement-revocation-profile").value,
-      { reviewerUserId: activeUserId, rationale: $("#requirement-revocation-rationale").value,
-        reviewerConfirmed: $("#requirement-revocation-confirmed").checked });
-    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Requirement profile revoked; audit history retained.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleDiagnosticProfileSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    const input = { name: $("#diagnostic-name").value, version: $("#diagnostic-version").value,
-      animalClass: $("#diagnostic-animal-class").value, applicability: $("#diagnostic-applicability").value,
-      sourceTitle: $("#diagnostic-source-title").value, sourceCitation: $("#diagnostic-citation").value,
-      sourceUrl: $("#diagnostic-url").value, publicationYear: $("#diagnostic-year").value,
-      minimumForageDMFraction: $("#diagnostic-forage").value, supersessionReason: $("#diagnostic-supersession-reason").value,
-      minimumMEDensityMJPerKgDM: $("#diagnostic-me").value, minimumCPPercentDM: $("#diagnostic-cp").value };
-    const previousId = $("#diagnostic-supersedes").value;
-    if (previousId) await FarmRepository.supersedeDiagnosticProfile(previousId, input);
-    else await FarmRepository.createDiagnosticProfile(input);
-    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Diagnostic profile saved inactive.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleDiagnosticSelectionSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.selectDiagnosticProfile($("#diagnostic-selection-profile").value,
-      { rationale: $("#diagnostic-selection-rationale").value,
-        animalIds: [...$("#diagnostic-selection-animals").selectedOptions].map((option) => option.value),
-        applicabilityConfirmed: $("#diagnostic-applicability-confirmed").checked });
-    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Diagnostic profile selected explicitly.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleDiagnosticArchiveSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.archiveDiagnosticProfile($("#diagnostic-archive-profile").value, $("#diagnostic-archive-reason").value);
-    if (!canShowFarmData(generation)) return; form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Diagnostic profile archived; its historical reviews were retained.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function renderNutritionProfile(feedId, generation = accessGeneration) {
-  selectedFeedId = feedId || null;
-  document.querySelectorAll("[data-feed-id]").forEach((row) => row.classList.toggle("active", row.dataset.feedId === selectedFeedId));
-  $("#feed-conflicts").replaceChildren();
-  $("#feed-profile").replaceChildren();
-  if (!feedId) {
-    $("#feed-profile-title").textContent = "Select a feed";
-    $("#feed-profile-empty").hidden = false;
-    return;
-  }
-  const [profile, selections] = await Promise.all([FarmRepository.getNutritionProfile(feedId),
-    FarmRepository.getNutritionSelections(feedId)]);
-  if (!canShowFarmData(generation) || selectedFeedId !== feedId || !profile || !selections) return;
-  $("#feed-profile-title").textContent = profile.feed.name;
-  const groups = Object.entries(profile.nutrients);
-  $("#feed-profile-empty").hidden = groups.length > 0;
-  $("#feed-profile-empty").textContent = groups.length ? "" : "No nutrition observations have been recorded for this feed.";
-  $("#feed-conflicts").innerHTML = profile.conflicts.map((code) =>
-    '<div class="feed-conflict">Conflicting ' + escapeHtml(nutrientLabels[code] || code) + ' observations retained for review; no average was calculated.</div>').join("");
-  $("#feed-profile").innerHTML = groups.map(([code, rows]) => '<section class="nutrient-group"><h4>' +
-    escapeHtml(nutrientLabels[code] || code) + '</h4>' + rows.map((row) => '<div class="observation"><strong>' +
-    escapeHtml(row.value + " " + row.unit.replaceAll("_", " ")) + '</strong><small>' +
-    escapeHtml(row.evidenceClass.replaceAll("_", " ") + " Â· " + (row.observedAt || "Date not recorded")) +
-    '</small><small>' + escapeHtml(row.source.title + " â€” " + row.source.citation) + '</small>' +
-    (row.context ? '<small>' + escapeHtml(row.context) + '</small>' : '') + '</div>').join("") + '</section>').join("");
-  const observations = groups.flatMap(([code, rows]) => rows.map((row) => ({ ...row, code })));
-  $("#feed-selection-form").hidden = observations.length === 0;
-  $("#feed-selection-observation").replaceChildren(new Option("Choose an observation", ""), ...observations.map((row) =>
-    new Option((nutrientLabels[row.code] || row.code) + " Â· " + row.value + " " + row.unit.replaceAll("_", " ") + " Â· " + row.source.title, row.id)));
-  $("#feed-current-selections").innerHTML = Object.entries(selections).map(([code, selection]) =>
-    '<div class="evidence-row selection-current"><strong>Selected ' + escapeHtml(nutrientLabels[code] || code) + '</strong><small>' +
-    escapeHtml(selection.observation ? selection.observation.value + " " + selection.observation.unit.replaceAll("_", " ") : "Observation unavailable") +
-    '</small><small>' + escapeHtml(selection.source?.citation || "Source unavailable") + '</small><small>Rationale: ' +
-    escapeHtml(selection.rationale) + '</small></div>').join("");
-}
-
-async function refreshFeedWorkspace(generation = accessGeneration) {
-  const refreshGeneration = ++feedRefreshGeneration;
-  if (!canShowFarmData(generation)) return;
-  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, allocationHistory, animals,
-    requirementProfiles, requirementReviews] = await Promise.all([FarmRepository.listFeeds(),
-    FarmRepository.listNutritionSources(), FarmRepository.listFeedCostSources(), FarmRepository.listFeedInventoryBatches(),
-    FarmRepository.listDiagnosticProfiles({ includeArchived: true }), FarmRepository.getSelectedDiagnosticProfile(),
-    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listRationAllocationEvidence(), FarmRepository.listAnimals(),
-    FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }), FarmRepository.listNutritionRequirementProfileReviews()]);
-  if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
-  const selectionRows = await Promise.all(feeds.map(async (feed) => [feed.id, await FarmRepository.getNutritionSelections(feed.id)]));
-  if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
-  const selectionsByFeed = new Map(selectionRows);
-  $("#feed-count").textContent = feeds.length + (feeds.length === 1 ? " feed" : " feeds");
-  $("#feed-source-count").textContent = sources.length + (sources.length === 1 ? " source" : " sources");
-  $("#feed-cost-source-count").textContent = costSources.length + (costSources.length === 1 ? " source" : " sources");
-  $("#feed-inventory-count").textContent = batches.length + (batches.length === 1 ? " batch" : " batches");
-  const movements = batches.flatMap((batch) => batch.movements.map((movement) => ({ ...movement, batch })));
-  $("#feed-movement-count").textContent = movements.length + (movements.length === 1 ? " movement" : " movements");
-  $("#feed-empty").hidden = feeds.length > 0;
-  $("#feed-source-empty").hidden = sources.length > 0;
-  $("#feed-cost-source-empty").hidden = costSources.length > 0;
-  $("#feed-inventory-empty").hidden = batches.length > 0;
-  $("#feed-movement-empty").hidden = movements.length > 0;
-  $("#feed-list").innerHTML = feeds.map((feed) => '<button type="button" class="feed-row" data-feed-id="' +
-    escapeHtml(feed.id) + '"><span><strong>' + escapeHtml(feed.name) + '</strong><small>' +
-    escapeHtml(feedRoleLabels[feed.role] || feed.role) + '</small></span><span aria-hidden="true">Review â†’</span></button>').join("");
-  $("#feed-source-list").innerHTML = sources.map((source) => '<div class="evidence-row"><strong>' +
-    escapeHtml(source.title) + '</strong><small>' + escapeHtml(source.sourceType.replaceAll("_", " ")) +
-    (source.publicationYear ? " Â· " + source.publicationYear : "") + '</small><small>' +
-    escapeHtml(source.citation) + '</small></div>').join("");
-  $("#feed-cost-source-list").innerHTML = costSources.map((source) => '<div class="evidence-row"><strong>' +
-    escapeHtml(source.reference) + '</strong><small>' + escapeHtml(source.sourceType.replaceAll("_", " ") + " Â· " + source.documentDate) +
-    '</small>' + (source.counterparty ? '<small>' + escapeHtml(source.counterparty) + '</small>' : '') + '</div>').join("");
-  $("#feed-inventory-list").innerHTML = batches.map((batch) => {
-    const unitCost = unitCostPerKg(batch);
-    return '<div class="evidence-row"><strong>' + escapeHtml(batch.feed?.name || "Feed unavailable") + '</strong><small>' +
-      escapeHtml(batch.remainingQuantityKg + " kg remaining of " + batch.receivedQuantityKg + " kg received Â· " + batch.receivedAt) + '</small><small>' +
-      escapeHtml(formatBatchMoney(batch.totalCostCents, batch.currencyCode) + (unitCost === null ? "" : " Â· " +
-        formatBatchMoney(Math.round(unitCost), batch.currencyCode) + "/kg")) + '</small><small>Cost source: ' +
-      escapeHtml(batch.costSource?.reference || "Source unavailable") + '</small></div>';
-  }).join("");
-  $("#feed-movement-list").innerHTML = movements.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((movement) =>
-    '<div class="evidence-row"><strong>' + escapeHtml(movement.batch.feed?.name || "Feed unavailable") + '</strong><small>' +
-    escapeHtml(movement.movementType.replaceAll("_", " ") + " Â· " + movement.inputQuantity + " " + movement.inputUnit.replaceAll("_AS_FED", "").replaceAll("_", " ") + " Â· " + movement.movementDate) +
-    '</small><small>' + escapeHtml(movement.reason) + '</small></div>').join("");
-  renderFeedOptions(feeds, sources);
-  renderInventoryOptions(feeds, costSources);
-  renderMovementOptions(batches);
-  renderRationReview(batches, selectionsByFeed);
-  renderDiagnosticProfiles(diagnosticProfiles, diagnosticSelection,
-    animals.filter((animal) => ["active", "dry"].includes(animal.status)), diagnosticHistory);
-  renderRationAllocationEvidence(diagnosticHistory, allocationHistory);
-  renderRequirementProfiles(requirementProfiles, requirementReviews);
-  if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
-  if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
-  await renderNutritionProfile(selectedFeedId, generation);
-}
-
-async function handleFeedCostSourceSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.createFeedCostSource({ sourceType: $("#feed-cost-type").value,
-      reference: $("#feed-cost-reference").value, counterparty: $("#feed-cost-counterparty").value,
-      documentDate: $("#feed-cost-date").value, notes: $("#feed-cost-notes").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); $("#feed-cost-date").value = toLocalDateString(); await refreshFeedWorkspace(generation);
-    setStatus("Feed cost source saved for review.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleFeedBatchSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.createFeedInventoryBatch($("#feed-batch-feed").value, {
-      costSourceId: $("#feed-batch-cost-source").value, receivedAt: $("#feed-batch-date").value,
-      receivedQuantityKg: $("#feed-batch-quantity").value, totalCost: $("#feed-batch-total-cost").value,
-      currencyCode: $("#feed-batch-currency").value, lotReference: $("#feed-batch-lot").value,
-      storageLocation: $("#feed-batch-location").value, notes: $("#feed-batch-notes").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); $("#feed-batch-date").value = toLocalDateString(); $("#feed-batch-currency").value = "KES";
-    await refreshFeedWorkspace(generation); setStatus("Feed inventory batch saved for review.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleFeedMovementSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.recordFeedInventoryMovement($("#feed-movement-batch").value, {
-      movementType: $("#feed-movement-type").value, movementDate: $("#feed-movement-date").value,
-      quantity: $("#feed-movement-quantity").value, unit: $("#feed-movement-unit").value,
-      reason: $("#feed-movement-reason").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); $("#feed-movement-date").value = toLocalDateString();
-    await refreshFeedWorkspace(generation); setStatus("Feed inventory movement saved.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleFeedSelectionSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.selectNutritionObservation(selectedFeedId, { observationId: $("#feed-selection-observation").value,
-      rationale: $("#feed-selection-rationale").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Nutrition evidence selection recorded for review.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleFeedSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    const feed = await FarmRepository.createFeed({ name: $("#feed-name").value, role: $("#feed-role").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); selectedFeedId = feed.id; await refreshFeedWorkspace(generation);
-    setStatus("Feed added to this farm library.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleFeedSourceSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    await FarmRepository.createNutritionSource({ title: $("#feed-source-title").value,
-      sourceType: $("#feed-source-type").value, citation: $("#feed-source-citation").value,
-      publisher: $("#feed-source-publisher").value, publicationYear: $("#feed-source-year").value,
-      url: $("#feed-source-url").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); await refreshFeedWorkspace(generation);
-    setStatus("Evidence source saved for review.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-async function handleFeedObservationSubmit(event) {
-  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
-  try {
-    const feedId = $("#feed-observation-feed").value;
-    await FarmRepository.createNutritionObservation(feedId, { sourceId: $("#feed-observation-source").value,
-      nutrientCode: $("#feed-observation-nutrient").value, value: $("#feed-observation-value").value,
-      unit: $("#feed-observation-unit").value, basis: $("#feed-observation-basis").value,
-      evidenceClass: $("#feed-observation-evidence").value,
-      observedAt: $("#feed-observation-date").value || null, rangeMin: $("#feed-observation-min").value,
-      rangeMax: $("#feed-observation-max").value, sampleCount: $("#feed-observation-samples").value,
-      context: $("#feed-observation-context").value });
-    if (!canShowFarmData(generation)) return;
-    form.reset(); selectNutritionMetric(); selectedFeedId = feedId;
-    await refreshFeedWorkspace(generation); setStatus("Nutrition observation saved for review only.", "success");
-  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
-}
-
-function showView(viewName) {
-  document.querySelectorAll("[data-view]").forEach((section) => {
-    const active = section.classList.contains("auth-unlocked") && section.dataset.view === viewName;
-    section.hidden = !active;
-    section.style.setProperty("display", active ? "block" : "none", "important");
-  });
-  document.querySelectorAll("[data-nav]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.nav === viewName);
-  });
-}
-
-async function refreshDashboard(generation = accessGeneration) {
-  if (!canShowFarmData(generation)) return;
-  const today = toLocalDateString();
-  const results = await Promise.all([
-    FarmRepository.getHerdSummary(),
-    FarmRepository.getTodayMilkSummary(today),
-    FarmRepository.getPendingSyncCount()
-  ]);
-  if (!canShowFarmData(generation)) return;
-
-  const herd = results[0];
-  const milk = results[1];
-  const pending = results[2];
-
-  $("#stat-total").textContent = herd.total;
-  $("#stat-dairy").textContent = herd.dairyCows;
-  $("#stat-bulls").textContent = herd.bulls;
-  $("#stat-calves").textContent = herd.calves;
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíßN9Ù:-jZ.¶›­–)Þ³V–×÷'B²ô4ôäd”rÒg&öÒ"âö6öæf–ræ§2#°¦–×÷'B²æ–ÖÅG—TÆ&VÂÂ6Æ7VÆFTW‡V7FVD6Çf–ærÂ6Æ7VÆFTÖ–ÆµfÇVRÂvWDÖ–ÆµvVVµW&–öBÂFôÆö6ÄFFU7G&–ærÒg&öÒ"âöFöÖ–âöf&Ò×'VÆW2æ§2#°¦–×÷'B²f–ÇFW$f–ææ6TVçG&–W2Âf÷&ÖDf–ææ6TÖöæW’Â7VÖÖ&—¦Tf–ææ6TVçG&–W2Òg&öÒ"âöFöÖ–âöf–ææ6Ræ§3ö'V–ÆCÓ##c“#rÓ#°¦–×÷'B²fÆ–FFTæ–ÖÂÂfÆ–FFTÖ–Æ²ÂfÆ–FFUvV–v‡BÂfÆ–FFTf–ææ6RÒg&öÒ"âöFöÖ–â÷fÆ–FF–öâæ§3ö'V–ÆCÓ##c“#"ÓB#°¦–×÷'B¢2f&Õ&W÷6—F÷'’g&öÒ"â÷7F÷&vRöf&Ò×&W÷6—F÷'’æ§3ö'V–ÆCÓ##crÓR#°¦–×÷'B²Væ—D6÷7EW$¶rÒg&öÒ"âöFöÖ–âöfVVBöfVVBÖ–çfVçF÷'’æ§3ö'V–ÆCÓ##c“#‚Ó#°¦–×÷'B²'V–ÆE&VDöæÇ•&F–öâÒg&öÒ"âöFöÖ–âöfVVB÷&F–öâÖ6öçG&7Bæ§3ö'V–ÆCÓ##cRÓ"#°¦–×÷'B²WfÇVFU&F–öâÒg&öÒ"âöFöÖ–âöfVVB÷&F–öâÖF–væ÷7F–72æ§3ö'V–ÆCÓ##cRÓ2#°¦–×÷'B²6ö×&U&WV—&VÖVçEFõ&F–öäWf–FVæ6RÒg&öÒ"âöFöÖ–âöfVVB÷&WV—&VÖVçB×&F–öâÖ6ö×&—6öâæ§3ö'V–ÆCÓ##crÓB#°¦–×÷'B²vWDWF„6Æ–VçBÒg&öÒ"âöWF‚æ§2#°¦–×÷'B²fW&–g”f&Ô66W72Òg&öÒ"âöf&ÒÖ66W72æ§3ö'V–ÆCÓ##c“#rÓ"#°¦–×÷'B²–ç7V7E&V6÷fW'”&6·WÒg&öÒ"â÷7F÷&vR÷&V6÷fW'’×&VfÆ–v‡Bæ§3ö'V–ÆCÓ##c“#rÓ"#°¦–×÷'B²6Æ–ÔÆVv7”æ–ÖÂÒg&öÒ"â÷7F÷&vRöÆVv7’Ö6Æ–Òæ§3ö'V–ÆCÓ##c“#rÓ"#°¦–×÷'B²7F'E7–æ4Æö÷Òg&öÒ"â÷7–æ2÷7–æ2ÖVæv–æRæ§3ö'V–ÆCÓ##c“#rÓ"#° ¦6öç7BBÒ‡6VÆV7F÷"’ÓâFö7VÖVçBçVW'•6VÆV7F÷"‡6VÆV7F÷"“°¦ÆWB6–væVD–âÒfÇ6S°¦ÆWB66W74vVæW&F–öâÒ°¦ÆWB6VÆV7FVDF–væ÷7F–5&öf–ÆRÒçVÆÃ°¦ÆWB6VÆV7FVDæ–ÖÄ–BÒçVÆÃ°¦ÆWB7F—fUW6W$–BÒçVÆÃ°¦ÆWB6ö×&—6öå&WV—&VÖVçD6Æ7VÆF–öç2ÒµÓ°¦ÆWB6ö×&—6öå&F–öå&Wf–Ww2ÒµÓ°¦ÆWB7W'&VçD6ö×&—6öäWf–FVæ6RÒçVÆÃ°¦ÆWBÆÆö6F–öå&F–öå&Wf–Ww2ÒµÓ° ¦gVæ7F–öâ6ÆV$f&Õf–Wr‚’°¢fVVE&Vg&W6„vVæW&F–öâ³Ò°¢²"6æ–ÖÂÖf÷&Ò"Â"6Ö–Æ²Öf÷&Ò"Â"7vV–v‡BÖf÷&Ò"Â"6'&VVF–ærÖf÷&Ò"Â"6†VÇF‚Öf÷&Ò"Â"6f–ææ6RÖf÷&Ò"À¢"6fVVBÖf÷&Ò"Â"6fVVB×6÷W&6RÖf÷&Ò"Â"6fVVBÖö'6W'fF–öâÖf÷&Ò"Â"6fVVBÖ6÷7B×6÷W&6RÖf÷&Ò"Â"6fVVBÖ&F6‚Öf÷&Ò"À¢"6fVVBÖÖ÷fVÖVçBÖf÷&Ò"Â"6fVVB×6VÆV7F–öâÖf÷&Ò"Â"7&F–öâ×&Wf–WrÖf÷&Ò"Â"6F–væ÷7F–2×&öf–ÆRÖf÷&Ò"À¢"6F–væ÷7F–2×6VÆV7F–öâÖf÷&Ò"Â"6F–væ÷7F–2Ö&6†—fRÖf÷&Ò"Â"6æ–ÖÂÖçWG&—F–öâÖ6Æ76–f–6F–öâÖf÷&Ò"À¢"6æ–ÖÂÖçWG&—F–öâ×&Wf–WrÖf÷&Ò"Â"7&WV—&VÖVçB×&öf–ÆRÖf÷&Ò"Â"7&WV—&VÖVçBÖ&÷fÂÖf÷&Ò"À¢"7&WV—&VÖVçB×&Wfö6F–öâÖf÷&Ò"Â"7&WV—&VÖVçBÖÆ–6&–Æ—G’Öf÷&Ò"Â"7&WV—&VÖVçBÖ6Æ7VÆF–öâÖf÷&Ò"À¢"7&WV—&VÖVçB×&F–öâÖ6ö×&—6öâÖf÷&Ò"Â"7&WV—&VÖVçB×&F–öâ×&Wf–WrÖf÷&Ò"Â"7&F–öâÖÆÆö6F–öâÖf÷&Ò%Òæf÷$V6‚‚‡6VÆV7F÷"’Óâ°¢B‡6VÆV7F÷"’ç&W6WB‚“°¢Ò“°¢B‚"6Ö–Æ²×fÇVR×&Wf–Wr"’çFW‡D6öçFVçBÒ.(	B#°¢B‚"6Ö–Æ²Ö6†V6¶Æ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"6Ö–Æ²Ö6†V6¶Æ—7B×7VÖÖ'’"’çFW‡D6öçFVçBÒ"#°¢B‚"6æ–ÖÂÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"6æ–ÖÇ2ÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6æ–ÖÂ×&öf–ÆR"’æ†–FFVâÒG'VS°¢6VÆV7FVDæ–ÖÄ–BÒçVÆÃ°¢B‚"66Æ76–f–6F–öâÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"66Æ76–f–6F–öâÖ6÷VçB"’çFW‡D6öçFVçBÒ#ö'6W'fF–öç2#°¢B‚"66Æ76–f–6F–öâÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"66Æ76–f–6F–öâ×&Wf–WrÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"66Æ76–f–6F–öâ×&Wf–WrÖ6÷VçB"’çFW‡D6öçFVçBÒ#&Wf–Ww2#°¢B‚"66Æ76–f–6F–öâ×&Wf–WrÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6æ–ÖÂÖçWG&—F–öâ×&Wf–WrÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"66Æ76–f–6F–öâ×&Wf–Wr×fW'6–öâ"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"66Æ76–f–6F–öâ×&Wf–Wr×&öf–ÆR"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&WV—&VÖVçBÖÆ–6&–Æ—G’ÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&WV—&VÖVçBÖÆ–6&–Æ—G’Ö6÷VçB"’çFW‡D6öçFVçBÒ#&Wf–Ww2#°¢B‚"7&WV—&VÖVçBÖÆ–6&–Æ—G’ÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"7&WV—&VÖVçBÖÆ–6&–Æ—G’Öf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&WV—&VÖVçBÖ6Æ7VÆF–öâÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&WV—&VÖVçBÖ6Æ7VÆF–öâÖ6÷VçB"’çFW‡D6öçFVçBÒ#6Æ7VÆF–öç2#°¢B‚"7&WV—&VÖVçBÖ6Æ7VÆF–öâÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"7&WV—&VÖVçBÖ6Æ7VÆF–öâÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&WV—&VÖVçB×&F–öâÖ6ö×&—6öâÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&WV—&VÖVçB×&F–öâÖ6ö×&—6öâÖV×G’"’æ†–FFVâÒG'VS°¢B‚"7&WV—&VÖVçB×&F–öâÖ6ö×&—6öâ×&W7VÇB"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&WV—&VÖVçB×&F–öâ×&Wf–WrÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&WV—&VÖVçB×&F–öâ×&Wf–WrÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&WV—&VÖVçB×&F–öâ×&Wf–WrÖ6÷VçB"’çFW‡D6öçFVçBÒ#&Wf–Ww2#°¢B‚"7&WV—&VÖVçB×&F–öâ×&Wf–WrÖV×G’"’æ†–FFVâÒfÇ6S°¢6ö×&—6öå&WV—&VÖVçD6Æ7VÆF–öç2ÒµÓ°¢6ö×&—6öå&F–öå&Wf–Ww2ÒµÓ°¢7W'&VçD6ö×&—6öäWf–FVæ6RÒçVÆÃ°¢ÆÆö6F–öå&F–öå&Wf–Ww2ÒµÓ°¢²"7&öf–ÆRÖæÖR"Â"7&öf–ÆR×G—R"Â"7&öf–ÆRÖ'&VVB"Â"7&öf–ÆR×7FGW2"Â"7&öf–ÆR×6÷W&6R"Â"7&öf–ÆRÖ&—'F‚%Òæf÷$V6‚‚‡6VÆV7F÷"’Óâ°¢B‡6VÆV7F÷"’çFW‡D6öçFVçBÒ"#°¢Ò“°¢6öç7B–ÖvRÒB‚"7&öf–ÆR×†÷Fò"“°¢–b†–ÖvRç7&2’U$Âç&Wfö¶Tö&¦V7EU$Â†–ÖvRç7&2“°¢–ÖvRç&VÖ÷fTGG&–'WFR‚'7&2"“°¢–ÖvRæ†–FFVâÒG'VS°¢²"6Ö–Æ²Öæ–ÖÂ"Â"7vV–v‡BÖæ–ÖÂ"Â"6†VÇF‚Öæ–ÖÂ"Â"6'&VVF–ærÖæ–ÖÂ%Òæf÷$V6‚‚‡6VÆV7F÷"’Óâ°¢B‡6VÆV7F÷"’ç&WÆ6T6†–ÆG&Vâ‚“°¢Ò“°¢²"77FB×F÷FÂ"Â"77FBÖF—'’"Â"77FBÖ'VÆÇ2"Â"77FBÖ6ÇfW2"Â"77–æ2Ö6÷VçB%Òæf÷$V6‚‚‡6VÆV7F÷"’Óâ°¢B‡6VÆV7F÷"’çFW‡D6öçFVçBÒ##°¢Ò“°¢B‚"7FöF’ÖÖ–Æ²"’çFW‡D6öçFVçBÒ#ãÂ#°¢B‚"7FöF’×fÇVR"’çFW‡D6öçFVçBÒ$µ6‚#°¢B‚"7vVV²×W&–öB"’çFW‡D6öçFVçBÒ.(	B#°¢B‚"6f–ææ6RÖÆ—7B"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"6f–ææ6RÖ6FVv÷'’×7VÖÖ'’"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"6f–ææ6R×W&–öB"’çfÇVRÒ&ÖöçF‚#°¢B‚"6f–ææ6RÖV×G’"’æ†–FFVâÒfÇ6S°¢f÷"†6öç7B–Böb²"6f–ææ6RÖ–æ6öÖR"Â"6f–ææ6RÖW‡Vç6R"Â"6f–ææ6RÖæWB%Ò’B†–B’çFW‡D6öçFVçBÒ$µ6‚ã#°¢B‚"6f–ææ6RÖ6÷VçB"’çFW‡D6öçFVçBÒ#VçG&–W2#°¢6VÆV7FVDfVVD–BÒçVÆÃ°¢²"6fVVBÖÆ—7B"Â"6fVVB×6÷W&6RÖÆ—7B"Â"6fVVB×&öf–ÆR"Â"6fVVBÖ6öæfÆ–7G2"Â"6fVVBÖ6÷7B×6÷W&6RÖÆ—7B"Â"6fVVBÖ–çfVçF÷'’ÖÆ—7B"À¢"6fVVBÖÖ÷fVÖVçBÖÆ—7B"Â"6fVVBÖ7W'&VçB×6VÆV7F–öç2"Â"7&F–öâ×&Wf–Wr×&÷w2"Â"7&F–öâ×&Wf–Wr×&W7VÇB"À¢"6F–væ÷7F–2×&öf–ÆRÖÆ—7B"Â"6F–væ÷7F–2Ö7W'&VçB×6VÆV7F–öâ"Â"6F–væ÷7F–2Ö†—7F÷'’ÖÆ—7B"À¢"7&WV—&VÖVçB×&öf–ÆRÖÆ—7B"Â"7&WV—&VÖVçB×&Wf–WrÖÆ—7B"Â"7&F–öâÖÆÆö6F–öâ×&÷w2"À¢"7&F–öâÖÆÆö6F–öâÖÆ—7B%Òæf÷$V6‚‚‡6VÆV7F÷"’ÓâB‡6VÆV7F÷"’ç&WÆ6T6†–ÆG&Vâ‚’“°¢6VÆV7FVDF–væ÷7F–5&öf–ÆRÒçVÆÃ°¢B‚"6F–væ÷7F–2×&öf–ÆRÖ6÷VçB"’çFW‡D6öçFVçBÒ#&öf–ÆW2#°¢B‚"6F–væ÷7F–2×&öf–ÆRÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6F–væ÷7F–2×6VÆV7F–öâÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"6F–væ÷7F–2Ö&6†—fRÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"6F–væ÷7F–2Ö†—7F÷'’Ö6÷VçB"’çFW‡D6öçFVçBÒ#&Wf–Ww2#°¢B‚"6F–væ÷7F–2Ö†—7F÷'’ÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"7&WV—&VÖVçB×&öf–ÆRÖ6÷VçB"’çFW‡D6öçFVçBÒ#&öf–ÆW2#°¢B‚"7&WV—&VÖVçB×&öf–ÆRÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"7&WV—&VÖVçB×&Wf–WrÖ6÷VçB"’çFW‡D6öçFVçBÒ#&Wf–Ww2#°¢B‚"7&WV—&VÖVçBÖ&÷fÂÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&WV—&VÖVçB×&Wfö6F–öâÖf÷&Ò"’æ†–FFVâÒG'VS°¢²"6fVVBÖö'6W'fF–öâÖfVVB"Â"6fVVBÖö'6W'fF–öâ×6÷W&6R"Â"6fVVBÖ&F6‚ÖfVVB"Â"6fVVBÖ&F6‚Ö6÷7B×6÷W&6R"À¢"6fVVBÖÖ÷fVÖVçBÖ&F6‚"Â"6fVVB×6VÆV7F–öâÖö'6W'fF–öâ"Â"6F–væ÷7F–2×6VÆV7F–öâ×&öf–ÆR"À¢"6F–væ÷7F–2×6VÆV7F–öâÖæ–ÖÇ2"Â"6F–væ÷7F–2Ö&6†—fR×&öf–ÆR"Â"6F–væ÷7F–2×7WW'6VFW2"À¢"7&WV—&VÖVçBÖ&÷fÂ×&öf–ÆR"Â"7&WV—&VÖVçB×&Wfö6F–öâ×&öf–ÆR"Â"7&WV—&VÖVçBÖÆ–6&–Æ—G’×&öf–ÆR"À¢"7&WV—&VÖVçBÖÆ–6&–Æ—G’Ö6Æ76–f–6F–öâ"Â"7&WV—&VÖVçBÖ6Æ7VÆF–öâ×&öf–ÆR"Â"7&WV—&VÖVçB×&F–öâÖ6Æ7VÆF–öâ"À¢"7&WV—&VÖVçB×&F–öâ×&Wf–Wr%Òæf÷$V6‚‚‡6VÆV7F÷"’ÓâB‡6VÆV7F÷"’ç&WÆ6T6†–ÆG&Vâ‚’“°¢B‚"6fVVBÖ6÷VçB"’çFW‡D6öçFVçBÒ#fVVG2#°¢B‚"6fVVB×6÷W&6RÖ6÷VçB"’çFW‡D6öçFVçBÒ#6÷W&6W2#°¢B‚"6fVVBÖ6÷7B×6÷W&6RÖ6÷VçB"’çFW‡D6öçFVçBÒ#6÷W&6W2#°¢B‚"6fVVBÖ–çfVçF÷'’Ö6÷VçB"’çFW‡D6öçFVçBÒ#&F6†W2#°¢B‚"6fVVBÖÖ÷fVÖVçBÖ6÷VçB"’çFW‡D6öçFVçBÒ#Ö÷fVÖVçG2#°¢B‚"6fVVBÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVB×6÷W&6RÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVBÖ6÷7B×6÷W&6RÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVBÖ–çfVçF÷'’ÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVBÖÖ÷fVÖVçBÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVB×6VÆV7F–öâÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&F–öâ×&Wf–WrÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"7&F–öâ×&Wf–WrÖ6Æ7VÆFR"’æF—6&ÆVBÒG'VS°¢B‚"7&F–öâÖÆÆö6F–öâÖf÷&Ò"’æ†–FFVâÒG'VS°¢B‚"7&F–öâÖÆÆö6F–öâ×&Wf–Wr"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&F–öâÖÆÆö6F–öâÖ6÷VçB"’çFW‡D6öçFVçBÒ#&Wf–Ww2#°¢B‚"7&F–öâÖÆÆö6F–öâÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVB×&öf–ÆRÖV×G’"’æ†–FFVâÒfÇ6S°¢B‚"6fVVB×&öf–ÆRÖV×G’"’çFW‡D6öçFVçBÒ$6†ö÷6RfVVBg&öÒF†Rf&ÒÆ–'&'’Fò&Wf–Wr—G2ö'6W'fF–öç2â#°¢B‚"6fVVB×&öf–ÆR×F—FÆR"’çFW‡D6öçFVçBÒ%6VÆV7BfVVB#°¢B‚"6fVVBÖ6÷7BÖFFR"’çfÇVRÒFôÆö6ÄFFU7G&–ær‚“°¢B‚"6fVVBÖ&F6‚ÖFFR"’çfÇVRÒFôÆö6ÄFFU7G&–ær‚“°¢B‚"6fVVBÖÖ÷fVÖVçBÖFFR"’çfÇVRÒFôÆö6ÄFFU7G&–ær‚“°¢B‚"6fVVBÖ&F6‚Ö7W'&Væ7’"’çfÇVRÒ$´U2#°§Ð ¦6öç7B6å6†÷tf&ÔFFÒ†vVæW&F–öâ’Óâ6–væVD–âbbvVæW&F–öâÓÓÒ66W74vVæW&F–öã° ¦gVæ7F–öâ6WD66W72‡VæÆö6¶VB’°¢Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚"æWF‚ÖvFVB"’æf÷$V6‚‚†VÂ’Óâ°¢VÂæ6Æ74Æ—7BçFövvÆR‚&WF‚×VæÆö6¶VB"ÂVæÆö6¶VB“°¢–b†VÂæÖF6†W2‚%¶FF×f–WuÒ"’’°¢VÂæ†–FFVâÒVæÆö6¶VBÇÂVÂæFF6WBçf–WrÓÒ&†öÖR#°¢VÂç7G–ÆRç6WE&÷W'G’‚&F—7Æ’"ÂVæÆö6¶VBbbVÂæFF6WBçf–WrÓÓÒ&†öÖR"ò&&Æö6²"¢&æöæR"Â&–×÷'FçB"“°¢ÒVÇ6R–b†VÂæ6Æ74Æ—7Bæ6öçF–ç2‚&&÷GFöÒÖæb"’’°¢VÂç7G–ÆRç6WE&÷W'G’‚&F—7Æ’"ÂVæÆö6¶VBò&w&–B"¢&æöæR"Â&–×÷'FçB"“°¢Ð¢Ò“°¢6öç7BÆö6´ÖW76vRÒB‚"6WF‚ÖÆö6²ÖÖW76vR"“°¢–b†Æö6´ÖW76vR’°¢Æö6´ÖW76vRæ†–FFVâÒVæÆö6¶VC°¢Æö6´ÖW76vRç7G–ÆRç6WE&÷W'G’‚&F—7Æ’"ÂVæÆö6¶VBò&æöæR"¢&&Æö6²"Â&–×÷'FçB"“°¢Ð¢–b‚VæÆö6¶VB’°¢6öç7B7FGW2ÒB‚"6×7FGW2"“°¢–b‡7FGW2’7FGW2çFW‡D6öçFVçBÒ%6–vâ–â&WV—&VB#°¢Ð§Ð ¦gVæ7F–öâW66T‡FÖÂ‡fÇVR’°¢&WGW&â7G&–ær‡fÇVRÇÂ""¢ç&WÆ6TÆÂ‚"b"Â"f×²"¢ç&WÆ6TÆÂ‚#Â"Â"fÇC²"¢ç&WÆ6TÆÂ‚#â"Â"fwC²"¢ç&WÆ6TÆÂ‚r"rÂ"gV÷C²"¢ç&WÆ6TÆÂ‚"r"Â"b33“²"“°§Ð ¦gVæ7F–öâ6WE7FGW2†ÖW76vRÂFöæRÒ&–æfò"’°¢6öç7BVÂÒB‚"6×7FGW2"“°¢VÂçFW‡D6öçFVçBÒÖW76vS°¢VÂæFF6WBçFöæRÒFöæS°§Ð ¦6öç7BfVVE&öÆTÆ&VÇ2Ò²f÷&vS¢$f÷&vR"Â6öæ6VçG&FS¢$6öæ6VçG&FR"ÂÖ–æW&Ã¢$Ö–æW&Â"Â÷F†W#¢$÷F†W""Ó°¦6öç7BçWG&–VçDÆ&VÇ2Ò²DÓ¢$G'’ÖGFW""ÂÔS¢$ÖWF&öÆ—¦&ÆRVæW&w’"Â5¢$7'VFR&÷FV–â"ÂäDc¢$äDb"À¢Dc¢$Db"Â5D$4ƒ¢%7F&6‚"ÂdC¢$fB"Â4ƒ¢$6‚"Â4¢$6Æ6—VÒ"Â¢%†÷7†÷'W2"Ó°¦6öç7BWf–FVæ6T6Æ76W2Òµ²%dU$”d”TEôÄ""Â%fW&–f–VBÆ&÷&F÷'’%ÒÂ²%$U4T$4…õ5Uõ%DTB"Â%&W6V&6‚7W÷'FVB%ÒÀ¢²$ÔåTd5EU$U%ôDT4Ä$TB"Â$ÖçVf7GW&W"FV6Æ&VB%ÒÂ²$d$ÕôÔT5U$TB"Â$f&ÒÖV7W&VB%ÒÀ¢²$4Ä5TÄDTB"Â$6Æ7VÆFVB%ÒÂ²$ÔôDTÅôU5D”ÔDTB"Â$ÖöFVÂW7F–ÖFVB%ÒÀ¢²%$ätUôU5D”ÔDR"Â%&ævRW7F–ÖFR%ÒÂ²%$õd•4”ôäÂ"Â%&÷f—6–öæÂ%ÒÂ²%Tä´äõtâ"Â%Væ¶æ÷vâ%ÕÓ°¦ÆWB6VÆV7FVDfVVD–BÒçVÆÃ°¦ÆWB&F–öå&Wf–Wu&÷w2ÒµÓ°¦ÆWBfVVE&Vg&W6„vVæW&F–öâÒ° ¦gVæ7F–öâ6VÆV7DçWG&—F–öäÖWG&–2‚’°¢6öç7BçWG&–VçBÒB‚"6fVVBÖö'6W'fF–öâÖçWG&–VçB"’çfÇVS°¢6öç7B&6—2ÒçWG&–VçBÓÓÒ$DÒ"ò$5ôdTB"¢$E%•ôÔEDU"#°¢6öç7BVæ—G2ÒçWG&–VçBÓÓÒ$DÒ"òµ²%U$4TåB"Â"R2fVB%ÒÂ²$uõU%ô´uô5ôdTB"Â&rö¶r2fVB%ÕÒ ¢çWG&–VçBÓÓÒ$ÔR"òµ²$Ô¥õU%ô´uôDÒ"Â$Ô¢ö¶rDÒ%ÕÒ¢µ²%U$4TåB"Â"RDÒ%ÒÂ²$uõU%ô´uôDÒ"Â&rö¶rDÒ%ÕÓ°¢B‚"6fVVBÖö'6W'fF–öâÖ&6—2"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ†&6—2ÓÓÒ$5ôdTB"ò$2fVB"¢$G'’ÖGFW""Â&6—2’“°¢B‚"6fVVBÖö'6W'fF–öâ×Væ—B"’ç&WÆ6T6†–ÆG&Vâ‚ââçVæ—G2æÖ‚…·fÇVRÂÆ&VÅÒ’ÓâæWr÷F–öâ†Æ&VÂÂfÇVR’’“°§Ð ¦gVæ7F–öâ&VæFW$fVVD÷F–öç2†fVVG2Â6÷W&6W2’°¢6öç7BfVVD÷F–öç2Ò¶æWr÷F–öâ‚$6†ö÷6RfVVB"Â""•Òæ6öæ6B†fVVG2æÖ‚†fVVB’ÓâæWr÷F–öâ†fVVBææÖRÂfVVBæ–B’’“°¢B‚"6fVVBÖö'6W'fF–öâÖfVVB"’ç&WÆ6T6†–ÆG&Vâ‚ââæfVVD÷F–öç2“°¢6öç7B6÷W&6T÷F–öç2Ò¶æWr÷F–öâ‚$6†ö÷6R6÷W&6R"Â""•Òæ6öæ6B‡6÷W&6W2æÖ‚‡6÷W&6R’ÓâæWr÷F–öâ‡6÷W&6RçF—FÆRÂ6÷W&6Ræ–B’’“°¢B‚"6fVVBÖö'6W'fF–öâ×6÷W&6R"’ç&WÆ6T6†–ÆG&Vâ‚ââç6÷W&6T÷F–öç2“°§Ð ¦gVæ7F–öâ&VæFW$–çfVçF÷'”÷F–öç2†fVVG2Â6÷7E6÷W&6W2’°¢B‚"6fVVBÖ&F6‚ÖfVVB"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6RfVVB"Â""’À¢ââæfVVG2æÖ‚†fVVB’ÓâæWr÷F–öâ†fVVBææÖRÂfVVBæ–B’’“°¢B‚"6fVVBÖ&F6‚Ö6÷7B×6÷W&6R"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6R6÷7B6÷W&6R"Â""’À¢ââæ6÷7E6÷W&6W2æÖ‚‡6÷W&6R’ÓâæWr÷F–öâ‡6÷W&6Rç&VfW&Væ6RÂ6÷W&6Ræ–B’’“°§Ð ¦gVæ7F–öâ&VæFW$Ö÷fVÖVçD÷F–öç2†&F6†W2’°¢B‚"6fVVBÖÖ÷fVÖVçBÖ&F6‚"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6R–çfVçF÷'’&F6‚"Â""’Âââæ&F6†W2æÖ‚†&F6‚’Óà¢æWr÷F–öâ‚†&F6‚æfVVCòææÖRÇÂ$fVVBVæf–Æ&ÆR"’²"+r"²&F6‚ç&VÖ–æ–æuVçF—G”¶r²"¶r&VÖ–æ–ær"Â&F6‚æ–B’’“°§Ð ¦gVæ7F–öâf÷&ÖD&F6„ÖöæW’†6VçG2Â7W'&Væ7’’°¢&WGW&âæWr–çFÂäçVÖ&W$f÷&ÖB‡VæFVf–æVBÂ²7G–ÆS¢&7W'&Væ7’"Â7W'&Væ7’Ò’æf÷&ÖB†6VçG2ò“°§Ð ¦gVæ7F–öâ&VæFW%&F–öå&Wf–Wr†&F6†W2Â6VÆV7F–öç4'”fVVB’°¢&F–öå&Wf–Wu&÷w2Ò&F6†W2æÖ‚†&F6‚’Óâ‡²&F6‚ÂfVVC¢&F6‚æfVVBÂ6VÆV7F–öç3¢6VÆV7F–öç4'”fVVBævWB†&F6‚æfVVD–B’ÇÂ·ÒÒ’“°¢B‚"7&F–öâ×&Wf–Wr×&÷w2"’æ–ææW$…DÔÂÒ&F–öå&Wf–Wu&÷w2æÖ‚‡&÷r’Óâ°¢6öç7BÖ—76–ærÒ²$DÒ"Â$ÔR"Â$5%Òæf–ÇFW"‚†6öFR’Óâ&÷rç6VÆV7F–öç5¶6öFUÓòæö'6W'fF–öâ“°¢&WGW&âsÆÆ&VÂ6Æ73Ò'&F–öâ×&÷r#ãÇ7ããÇ7G&öæsâr²W66T‡FÖÂ‡&÷ræfVVCòææÖRÇÂ$fVVBVæf–Æ&ÆR"’²sÂ÷7G&öæsãÇ6ÖÆÃâr°¢W66T‡FÖÂ‡&÷ræ&F6‚ç&VÖ–æ–æuVçF—G”¶r²"¶rf–Æ&ÆR"²†Ö—76–æræÆVæwF‚ò"+rÖ—76–ær6VÆV7FVB"²Ö—76–æræ¦ö–â‚"Â"’¢"+rWf–FVæ6R&VG’"’’°¢sÂ÷6ÖÆÃãÂ÷7ããÆ–çWBG—SÒ&çVÖ&W""Ö–ãÒ#"ÖƒÒ"r²W66T‡FÖÂ‡&÷ræ&F6‚ç&VÖ–æ–æuVçF—G”¶r’°¢r"7FWÒ#ã"fÇVSÒ#"FF×&F–öâÖ&F6‚Ö–CÒ"r²W66T‡FÖÂ‡&÷ræ&F6‚æ–B’²r"&–ÖÆ&VÃÒ$2ÖfVB¶rf÷"r°¢W66T‡FÖÂ‡&÷ræfVVCòææÖRÇÂ&fVVB"’²r"r²†Ö—76–æræÆVæwF‚ò&F—6&ÆVB"¢""’²sãÂöÆ&VÃâs°¢Ò’æ¦ö–â‚""“°¢6öç7B&VG’Ò&F–öå&Wf–Wu&÷w2ç6öÖR‚‡&÷r’Óâ²$DÒ"Â$ÔR"Â$5%ÒæWfW'’‚†6öFR’Óâ&÷rç6VÆV7F–öç5¶6öFUÓòæö'6W'fF–öâ’“°¢B‚"7&F–öâ×&Wf–WrÖV×G’"’æ†–FFVâÒ&VG“°¢B‚"7&F–öâ×&Wf–WrÖ6Æ7VÆFR"’æF—6&ÆVBÒ&VG“°¢B‚"7&F–öâ×&Wf–Wr×&W7VÇB"’ç&WÆ6T6†–ÆG&Vâ‚“°§Ð ¦7–æ2gVæ7F–öâ†æFÆU&F–öå&Wf–Wr†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“°¢6öç7BvVæW&F–öâÒ66W74vVæW&F–öã°¢G'’°¢6öç7BVçF—F–W2ÒæWrÖ…²ââæFö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚%¶FF×&F–öâÖ&F6‚Ö–EÒ"•Ð¢æÖ‚†–çWB’Óâ¶–çWBæFF6WBç&F–öä&F6„–BÂçVÖ&W"†–çWBçfÇVRÇÂ•Ò’“°¢6öç7B&÷w2Ò&F–öå&Wf–Wu&÷w2æÖ‚‡&÷r’Óâ‡²ââç&÷rÀ¢4fVD¶s¢VçF—F–W2ævWB‡&÷ræ&F6‚æ–B’ÇÂÒ’¢æf–ÇFW"‚‡&÷r’Óâ&÷ræ4fVD¶râ“°¢6öç7B&F–öâÒ'V–ÆE&VDöæÇ•&F–öâ‡&÷w2“°¢6öç7Bf÷&vU6†&RÒ&F–öâæf÷&vTDÔ¶rò&F–öâçF÷FÄDÔ”¶r¢°¢6öç7BF–væ÷7F–2Ò6VÆV7FVDF–væ÷7F–5&öf–ÆRòWfÇVFU&F–öâ‡&F–öâÂ6VÆV7FVDF–væ÷7F–5&öf–ÆRç&öf–ÆR’¢çVÆÃ°¢–b†F–væ÷7F–2’v—Bf&Õ&W÷6—F÷'’ç&V6÷&DF–væ÷7F–5v&æ–æu&Wf–Wr‡&F–öâÂF–væ÷7F–2Â°¢&F–öä&6—3¢$D”Å•ôôddU$TEõ$D”ôâ"Â&F–öä&6—46öæf—&ÖVC¢B‚"7&F–öâÖF–Ç’Ö&6—2"’æ6†V6¶V@¢Ò“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢6öç7BÖW76vW2Ò²Äõuôdõ$tUôDÕõ4„$S¢$&VÆ÷rF†R6VÆV7FVB&öf–Æ^(	—2Ö–æ–×VÒf÷&vRG'’ÖÖGFW"6†&Râ"À¢ÄõuôÔUôDTå4•E“¢$&VÆ÷rF†R6VÆV7FVB&öf–Æ^(	—2Ö–æ–×VÒÔRFVç6—G’â"À¢Äõuô5õU$4TåEôDÓ¢$&VÆ÷rF†R6VÆV7FVB&öf–Æ^(	—2Ö–æ–×VÒ7'VFR×&÷FV–â6öæ6VçG&F–öââ"À¢äõô4ôäd”uU$TEõD…$U4„ôÄEõE$”ttU$TC¢$æò6VÆV7FVB×&öf–ÆRF‡&W6†öÆBv2G&–vvW&VBâF†—2—2æ÷B&ööbF†BF†R&F–öâÖVWG2F†Ræ–ÖÎ(	—2&WV—&VÖVçG2â"Ó°¢6öç7BF–væ÷7F–4‡FÖÂÒF–væ÷7F–2òsÆF—b6Æ73Ò&fVVBÖÆ—7B#âr²F–væ÷7F–2æÖ‚†f–æF–ær’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ†ÖW76vW5¶f–æF–æræ6öFUÒ’²sÂ÷7G&öæsãÂöF—câr’æ¦ö–â‚""’²sÂöF—cãÇ6Æ73Ò&×WFVB#äÆ–VBr°¢W66T‡FÖÂ‡6VÆV7FVDF–væ÷7F–5&öf–ÆRç&öf–ÆRææÖR²"b"²6VÆV7FVDF–væ÷7F–5&öf–ÆRç&öf–ÆRçfW'6–öâ²"+r"°¢6VÆV7FVDF–væ÷7F–5&öf–ÆRç&öf–ÆRææ–ÖÄ6Æ72ç&WÆ6TÆÂ‚%ò"Â""’’²rãÂ÷âr ¢sÇ6Æ73Ò&×WFVB#äæòF–væ÷7F–2&öf–ÆR6VÆV7FVC²æòçWG&—F–öæÂv&æ–æw2vW&RÆ–VBãÂ÷âs°¢B‚"7&F–öâ×&Wf–Wr×&W7VÇB"’æ–ææW$…DÔÂÒsÆF—b6Æ73Ò'&F–öâÖÖWG&–72#ãÆF—cãÇ6ÖÆÃä2fVCÂ÷6ÖÆÃãÇ7G&öæsâr°¢W66T‡FÖÂ‡&F–öâçF÷FÄ4fVD¶rçFôf—†VBƒ2’’²r¶sÂ÷7G&öæsãÂöF—cãÆF—cãÇ6ÖÆÃäG'’ÖGFW#Â÷6ÖÆÃãÇ7G&öæsâr°¢W66T‡FÖÂ‡&F–öâçF÷FÄDÔ”¶rçFôf—†VBƒ2’’²r¶sÂ÷7G&öæsãÂöF—cãÆF—cãÇ6ÖÆÃäÔRFVç6—G“Â÷6ÖÆÃãÇ7G&öæsâr°¢W66T‡FÖÂ‡&F–öâæÖTFVç6—G”Ô¥W$¶tDÒçFôf—†VBƒ"’’²rÔ¢ö¶rDÓÂ÷7G&öæsãÂöF—cãÆF—cãÇ6ÖÆÃä7'VFR&÷FV–ãÂ÷6ÖÆÃãÇ7G&öæsâr°¢W66T‡FÖÂ‡&F–öâæ7W&6VçDDÒçFôf—†VBƒ"’’²rRDÓÂ÷7G&öæsãÂöF—cãÆF—cãÇ6ÖÆÃäf÷&vRDÒ6†&SÂ÷6ÖÆÃãÇ7G&öæsâr°¢W66T‡FÖÂ†f÷&vU6†&RçFôf—†VBƒ’’²rSÂ÷7G&öæsãÂöF—cãÆF—cãÇ6ÖÆÃäW7F–ÖFVB6÷7CÂ÷6ÖÆÃãÇ7G&öæsâr°¢W66T‡FÖÂ†f÷&ÖD&F6„ÖöæW’‡&F–öâçF÷FÄ6÷7D6VçG2Â&F–öâæ7W'&Væ7”6öFR’’²sÂ÷7G&öæsãÂöF—cãÂöF—câr²F–væ÷7F–4‡FÖÂ²sÇ6Æ73Ò&×WFVB#ä6Æ7VÆF–öâöæÇ’âæò&F–öâ6fR÷"–çfVçF÷'’Ö÷fVÖVçBv27&VFVBãÂ÷âs°¢–b†F–væ÷7F–2’&VæFW$F–væ÷7F–4†—7F÷'’†v—Bf&Õ&W÷6—F÷'’æÆ—7DF–væ÷7F–5v&æ–æt†—7F÷'’‚’“°¢6WE7FGW2‚%&VBÖöæÇ’&F–öâ6Æ7VÆF–öâ6ö×ÆWFVBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²B‚"7&F–öâ×&Wf–Wr×&W7VÇB"’ç&WÆ6T6†–ÆG&Vâ‚“²Ð§Ð ¦gVæ7F–öâ&VæFW$F–væ÷7F–4†—7F÷'’††—7F÷'’’°¢B‚"6F–væ÷7F–2Ö†—7F÷'’Ö6÷VçB"’çFW‡D6öçFVçBÒ†—7F÷'’æÆVæwF‚²††—7F÷'’æÆVæwF‚ÓÓÒò"&Wf–Wr"¢"&Wf–Ww2"“°¢B‚"6F–væ÷7F–2Ö†—7F÷'’ÖV×G’"’æ†–FFVâÒ†—7F÷'’æÆVæwF‚â°¢B‚"6F–væ÷7F–2Ö†—7F÷'’ÖÆ—7B"’æ–ææW$…DÔÂÒ†—7F÷'’æÖ‚‡&÷r’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡&÷rç&öf–ÆTæÖR²"b"²&÷rç&öf–ÆUfW'6–öâ’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡&÷ræ6Æ7VÆFVDB’°¢r+rr²W66T‡FÖÂ‡&÷rææ–ÖÄ6Æ72ç&WÆ6TÆÂ‚%ò"Â""’’²sÂ÷6ÖÆÃãÇ6ÖÆÃäw&÷W¢r°¢W66T‡FÖÂ‡&÷rææ–ÖÄw&÷WæÖ‚†æ–ÖÂ’Óâæ–ÖÂææ–ÖÄ6öFR’æ¦ö–â‚"Â"’’²sÂ÷6ÖÆÃãÇ6ÖÆÃäf–æF–æw3¢r°¢W66T‡FÖÂ‡&÷ræf–æF–æt6öFW2æ¦ö–â‚"Â"’’²sÂ÷6ÖÆÃãÇ6ÖÆÃä6—FF–öã¢r²W66T‡FÖÂ‡&÷rç6÷W&6T6—FF–öâ’²sÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°§Ð ¦gVæ7F–öâ&VæFW$ÆÆö6F–öä–çWG2‚’°¢6öç7B&Wf–WrÒÆÆö6F–öå&F–öå&Wf–Ww2æf–æB‚‡&÷r’Óâ&÷ræ–BÓÓÒB‚"7&F–öâÖÆÆö6F–öâ×&Wf–Wr"’çfÇVR“°¢–b‚&Wf–Wr’²B‚"7&F–öâÖÆÆö6F–öâ×&÷w2"’ç&WÆ6T6†–ÆG&Vâ‚“²&WGW&ã²Ð¢B‚"7&F–öâÖÆÆö6F–öâ×&÷w2"’æ–ææW$…DÔÂÒ&Wf–Wrææ–ÖÄw&÷WæÖ‚†æ–ÖÂ’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ†æ–ÖÂææ–ÖÄ6öFRÇÂæ–ÖÂæ–B’²sÂ÷7G&öæsâr²&Wf–Wrç&F–öâæ–æw&VF–VçG2æÖ‚†–æw&VF–VçB’Óà¢sÆÆ&VÂ6Æ73Ò&f–VÆB#ãÇ7ãâr²W66T‡FÖÂ†–æw&VF–VçBæfVVDæÖR’²r†¶r2fVB“Â÷7ããÆ–çWBG—SÒ&çVÖ&W""Ö–ãÒ#"7FWÒ#ã"&WV—&VBFFÖÆÆö6F–öâÖæ–ÖÃÒ"r°¢W66T‡FÖÂ†æ–ÖÂæ–B’²r"FFÖÆÆö6F–öâÖfVVCÒ"r²W66T‡FÖÂ†–æw&VF–VçBæfVVD–B’²r#ãÂöÆ&VÃâr’æ¦ö–â‚""’²sÂöF—câr’æ¦ö–â‚""“°§Ð ¦gVæ7F–öâ&VæFW%&F–öäÆÆö6F–öäWf–FVæ6R††—7F÷'’Â&Wf–Ww2’°¢ÆÆö6F–öå&F–öå&Wf–Ww2Ò†—7F÷'’æf–ÇFW"‚‡&÷r’Óâ&÷rææ–ÖÄw&÷WòæÆVæwF‚âbb&÷rç&F–öãòæ–æw&VF–VçG3òæÆVæwF‚“°¢B‚"7&F–öâÖÆÆö6F–öâÖf÷&Ò"’æ†–FFVâÒÆÆö6F–öå&F–öå&Wf–Ww2æÆVæwF‚ÓÓÒ°¢B‚"7&F–öâÖÆÆö6F–öâ×&Wf–Wr"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6Rw&÷W&F–öâ&Wf–Wr"Â""’ÂââæÆÆö6F–öå&F–öå&Wf–Ww2æÖ‚‡&÷r’Óà¢æWr÷F–öâ‡&÷ræ6Æ7VÆFVDB²"+r"²&÷rææ–ÖÄw&÷WæÖ‚†æ–ÖÂ’Óâæ–ÖÂææ–ÖÄ6öFRÇÂæ–ÖÂæ–B’æ¦ö–â‚"Â"’Â&÷ræ–B’’“°¢B‚"7&F–öâÖÆÆö6F–öâ×&÷w2"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"7&F–öâÖÆÆö6F–öâÖ6÷VçB"’çFW‡D6öçFVçBÒ&Wf–Ww2æÆVæwF‚²‡&Wf–Ww2æÆVæwF‚ÓÓÒò"&Wf–Wr"¢"&Wf–Ww2"“°¢B‚"7&F–öâÖÆÆö6F–öâÖV×G’"’æ†–FFVâÒÆÆö6F–öå&F–öå&Wf–Ww2æÆVæwF‚âÇÂ&Wf–Ww2æÆVæwF‚â°¢B‚"7&F–öâÖÆÆö6F–öâÖÆ—7B"’æ–ææW$…DÔÂÒ&Wf–Ww2æÖ‚‡&Wf–Wr’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡&Wf–WræÆÆö6F–öäÖWF†öBç&WÆ6TÆÂ‚%ò"Â""’’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡&Wf–Wrç&Wf–WvVDB’°¢r+rr²W66T‡FÖÂ‡&Wf–WræÆÆö6F–öç2æÆVæwF‚²"æ–ÖÇ2"’²sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&Wf–Wrç&F–öæÆR’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&Wf–WræÆÆö6F–öç2æÖ‚‡&÷r’Óâ&÷rææ–ÖÄ–B²#¢"²&÷rç&F–öâçF÷FÄ4fVD¶r²"¶r2fVB"’æ¦ö–â‚"+r"’’²sÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°§Ð ¦7–æ2gVæ7F–öâ†æFÆU&F–öäÆÆö6F–öå7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢6öç7B&F–öå&Wf–Wt–BÒB‚"7&F–öâÖÆÆö6F–öâ×&Wf–Wr"’çfÇVS°¢6öç7B&Wf–WrÒÆÆö6F–öå&F–öå&Wf–Ww2æf–æB‚‡&÷r’Óâ&÷ræ–BÓÓÒ&F–öå&Wf–Wt–B“°¢–b‚&Wf–Wr’F‡&÷ræWrW'&÷"‚$6†ö÷6R6ö×F–&ÆRw&÷W&F–öâ&Wf–Wrâ"“°¢6öç7BÆÆö6F–öç2Ò&Wf–Wrææ–ÖÄw&÷WæÖ‚†æ–ÖÂ’Óâ‡²æ–ÖÄ–C¢æ–ÖÂæ–BÀ¢–æw&VF–VçG3¢&Wf–Wrç&F–öâæ–æw&VF–VçG2æÖ‚†–æw&VF–VçB’Óâ‡²fVVD–C¢–æw&VF–VçBæfVVD–BÀ¢4fVD¶s¢çVÖ&W"†Fö7VÖVçBçVW'•6VÆV7F÷"‚u¶FFÖÆÆö6F–öâÖæ–ÖÃÒ"r²552æW66R†æ–ÖÂæ–B’²r%Õ¶FFÖÆÆö6F–öâÖfVVCÒ"r²552æW66R†–æw&VF–VçBæfVVD–B’²r%Òr’çfÇVR’Ò’’Ò’“°¢v—Bf&Õ&W÷6—F÷'’ç&V6÷&E&F–öäÆÆö6F–öäWf–FVæ6R‡&F–öå&Wf–Wt–BÂ²ÆÆö6F–öäÖWF†öC¢$Dô5TÔTåDTEô”äu$TD”TåEõtT”t…E2"À¢&F–öæÆS¢B‚"7&F–öâÖÆÆö6F–öâ×&F–öæÆR"’çfÇVRÂ&Wf–WvW%W6W$–C¢7F—fUW6W$–BÀ¢&Wf–WvW$6öæf—&ÖVC¢B‚"7&F–öâÖÆÆö6F–öâÖ6öæf—&ÖVB"’æ6†V6¶VBÂÆÆö6F–öç2Ò“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²B‚"7&F–öâÖÆÆö6F–öâ×&÷w2"’ç&WÆ6T6†–ÆG&Vâ‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2‚%W"Öæ–ÖÂ&F–öâÆÆö6F–öâWf–FVæ6R&V6÷&FVBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦gVæ7F–öâ&VæFW$F–væ÷7F–5&öf–ÆW2‡&öf–ÆW2Â6VÆV7FVBÂæ–ÖÇ2Â†—7F÷'’’°¢6VÆV7FVDF–væ÷7F–5&öf–ÆRÒ6VÆV7FVC°¢B‚"6F–væ÷7F–2×&öf–ÆRÖ6÷VçB"’çFW‡D6öçFVçBÒ&öf–ÆW2æÆVæwF‚²‡&öf–ÆW2æÆVæwF‚ÓÓÒò"&öf–ÆR"¢"&öf–ÆW2"“°¢B‚"6F–væ÷7F–2×&öf–ÆRÖV×G’"’æ†–FFVâÒ&öf–ÆW2æÆVæwF‚â°¢B‚"6F–væ÷7F–2×&öf–ÆRÖÆ—7B"’æ–ææW$…DÔÂÒ&öf–ÆW2æÖ‚‡&öf–ÆR’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡&öf–ÆRææÖR²"b"²&öf–ÆRçfW'6–öâ’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡&öf–ÆRææ–ÖÄ6Æ72ç&WÆ6TÆÂ‚%ò"Â""’’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃå7FGW3¢r²W66T‡FÖÂ‡&öf–ÆRç7FGW2’²‡&öf–ÆRç7WW'6VFW5&öf–ÆT–Bò"+r7WW'6VF–ærfW'6–öâ"¢""’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&öf–ÆRæÆ–6&–Æ—G’’²sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&öf–ÆRç6÷W&6UF—FÆR²"(	B"²&öf–ÆRç6÷W&6T6—FF–öâ’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃåF‡&W6†öÆG3¢f÷&vRr²W66T‡FÖÂ‡&öf–ÆRæÖ–æ–×VÔf÷&vTDÔg&7F–öâ’²rÂÔRr°¢W66T‡FÖÂ‡&öf–ÆRæÖ–æ–×VÔÔTFVç6—G”Ô¥W$¶tDÒ’²rÂ5r²W66T‡FÖÂ‡&öf–ÆRæÖ–æ–×VÔ5W&6VçDDÒ’²rSÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°¢6öç7B7F—fU&öf–ÆW2Ò&öf–ÆW2æf–ÇFW"‚‡&öf–ÆR’Óâ&öf–ÆRç7FGW2ÓÒ&&6†—fVB"“°¢B‚"6F–væ÷7F–2×6VÆV7F–öâÖf÷&Ò"’æ†–FFVâÒ7F—fU&öf–ÆW2æÆVæwF‚ÓÓÒÇÂæ–ÖÇ2æÆVæwF‚ÓÓÒ°¢B‚"6F–væ÷7F–2Ö&6†—fRÖf÷&Ò"’æ†–FFVâÒ7F—fU&öf–ÆW2æÆVæwF‚ÓÓÒ°¢B‚"6F–væ÷7F–2×6VÆV7F–öâ×&öf–ÆR"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6R&öf–ÆR"Â""’Âââæ7F—fU&öf–ÆW2æÖ‚‡&öf–ÆR’Óà¢æWr÷F–öâ‡&öf–ÆRææÖR²"b"²&öf–ÆRçfW'6–öâ²"+r"²&öf–ÆRææ–ÖÄ6Æ72ç&WÆ6TÆÂ‚%ò"Â""’Â&öf–ÆRæ–B’’“°¢B‚"6F–væ÷7F–2×6VÆV7F–öâÖæ–ÖÇ2"’ç&WÆ6T6†–ÆG&Vâ‚ââææ–ÖÇ2æÖ‚†æ–ÖÂ’ÓâæWr÷F–öâ†æ–ÖÂææ–ÖÄ6öFR²"+r"²æ–ÖÂçG—Rç&WÆ6TÆÂ‚%ò"Â""’Âæ–ÖÂæ–B’’“°¢B‚"6F–væ÷7F–2Ö&6†—fR×&öf–ÆR"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6R&öf–ÆR"Â""’Âââæ7F—fU&öf–ÆW2æÖ‚‡&öf–ÆR’Óà¢æWr÷F–öâ‡&öf–ÆRææÖR²"b"²&öf–ÆRçfW'6–öâÂ&öf–ÆRæ–B’’“°¢B‚"6F–væ÷7F–2×7WW'6VFW2"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$æWr&öf–ÆR"Â""’Âââæ7F—fU&öf–ÆW2æÖ‚‡&öf–ÆR’Óà¢æWr÷F–öâ‡&öf–ÆRææÖR²"b"²&öf–ÆRçfW'6–öâÂ&öf–ÆRæ–B’’“°¢B‚"6F–væ÷7F–2Ö7W'&VçB×6VÆV7F–öâ"’æ–ææW$…DÔÂÒ6VÆV7FVBòsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r6VÆV7F–öâÖ7W'&VçB#ãÇ7G&öæsä7F—fRf÷"v&æ–æw3¢r°¢W66T‡FÖÂ‡6VÆV7FVBç&öf–ÆRææÖR²"b"²6VÆV7FVBç&öf–ÆRçfW'6–öâ’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡6VÆV7FVBç&öf–ÆRææ–ÖÄ6Æ72ç&WÆ6TÆÂ‚%ò"Â""’’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡6VÆV7FVBç&öf–ÆRæÆ–6&–Æ—G’’²sÂ÷6ÖÆÃãÇ6ÖÆÃå&F–öæÆS¢r²W66T‡FÖÂ‡6VÆV7FVBç6VÆV7F–öâç&F–öæÆR’²sÂ÷6ÖÆÃãÂöF—câr ¢sÇ6Æ73Ò&×WFVB#äæò&öf–ÆR&÷fVBf÷"6öæf—&ÖVBæ–ÖÂw&÷WâçWG&—F–öæÂv&æ–æw2&R–æ7F—fRãÂ÷âs°¢&VæFW$F–væ÷7F–4†—7F÷'’††—7F÷'’“°§Ð ¦6öç7B&WV—&VÖVçEVæ—G2Ò²DÔ•ô´uôD“¢&¶rDÒöF’"ÂÔUôÔ¥ôD“¢$Ô¢ÔRöF’"ÂäTÅôÔ4ÅôD“¢$Ö6ÂäTÂöF’"À¢5ô´uôD“¢&¶r5öF’"ÂÕôuôD“¢&rÕöF’"Ó° ¦gVæ7F–öâ&VæFW%&WV—&VÖVçE&öf–ÆW2‡&öf–ÆW2Â&Wf–Ww2’°¢B‚"7&WV—&VÖVçB×&öf–ÆRÖ6÷VçB"’çFW‡D6öçFVçBÒ&öf–ÆW2æÆVæwF‚²‡&öf–ÆW2æÆVæwF‚ÓÓÒò"&öf–ÆR"¢"&öf–ÆW2"“°¢B‚"7&WV—&VÖVçB×&öf–ÆRÖV×G’"’æ†–FFVâÒ&öf–ÆW2æÆVæwF‚â°¢B‚"7&WV—&VÖVçB×&öf–ÆRÖÆ—7B"’æ–ææW$…DÔÂÒ&öf–ÆW2æÖ‚‡&öf–ÆR’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡&öf–ÆRææÖR²"b"²&öf–ÆRçfW'6–öâ’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ†Æ&VÄVçVÒ‡&öf–ÆRææ–ÖÄ6Æ72’’°¢r+rr²W66T‡FÖÂ‡&öf–ÆRæçWG&–VçE7—7FVÒ’²r+r7FGW3¢r²W66T‡FÖÂ‡&öf–ÆRç7FGW2’²sÂ÷6ÖÆÃãÇ6ÖÆÃâr°¢W66T‡FÖÂ‡&öf–ÆRç6÷W&6UF—FÆR²"(	B"²&öf–ÆRç6÷W&6T6—FF–öâ’²sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&öf–ÆRæÆ–6&–Æ—G’’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃäWVF–öç3¢r²W66T‡FÖÂ‡&öf–ÆRæWVF–öç2æÖ‚‡&÷r’Óâ&÷ræ÷WGWD6öFR²"+r"²&÷ræWVF–öå&VfW&Væ6R’æ¦ö–â‚#²"’’°¢sÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°¢6öç7BG&gG2Ò&öf–ÆW2æf–ÇFW"‚‡&÷r’Óâ&÷rç7FGW2ÓÓÒ&G&gB"“²6öç7B&÷fVBÒ&öf–ÆW2æf–ÇFW"‚‡&÷r’Óâ&÷rç7FGW2ÓÓÒ&&÷fVB"“°¢B‚"7&WV—&VÖVçBÖ&÷fÂÖf÷&Ò"’æ†–FFVâÒG&gG2æÆVæwF‚ÓÓÒ²B‚"7&WV—&VÖVçB×&Wfö6F–öâÖf÷&Ò"’æ†–FFVâÒ&÷fVBæÆVæwF‚ÓÓÒ°¢B‚"7&WV—&VÖVçBÖ&÷fÂ×&öf–ÆR"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6RG&gB"Â""’ÂââæG&gG2æÖ‚‡&÷r’ÓâæWr÷F–öâ‡&÷rææÖR²"b"²&÷rçfW'6–öâÂ&÷ræ–B’’“°¢B‚"7&WV—&VÖVçB×&Wfö6F–öâ×&öf–ÆR"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6Râ&÷fVB&öf–ÆR"Â""’Âââæ&÷fVBæÖ‚‡&÷r’ÓâæWr÷F–öâ‡&÷rææÖR²"b"²&÷rçfW'6–öâÂ&÷ræ–B’’“°¢B‚"7&WV—&VÖVçB×&Wf–WrÖ6÷VçB"’çFW‡D6öçFVçBÒ&Wf–Ww2æÆVæwF‚²‡&Wf–Ww2æÆVæwF‚ÓÓÒò"&Wf–Wr"¢"&Wf–Ww2"“°¢B‚"7&WV—&VÖVçB×&Wf–WrÖÆ—7B"’æ–ææW$…DÔÂÒ&Wf–Ww2æÖ‚‡&÷r’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡&÷ræFV6—6–öâ²"+rb"²&÷rç&öf–ÆUfW'6–öâ’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡&÷rç&F–öæÆR’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&÷rç&Wf–WvVDB’²r+r–Ö×WF&ÆRVF—BWfVçCÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°§Ð ¦gVæ7F–öâ&WV—&VÖVçEFW&×4g&öÔf÷&Ò‚’°¢6öç7BFW&×2ÒµÓ²6öç7B6öç7FçBÒB‚"7&WV—&VÖVçBÖ6öç7FçB"’çfÇVS²6öç7BvV–v‡BÒB‚"7&WV—&VÖVçB×vV–v‡BÖ6öVff–6–VçB"’çfÇVS°¢6öç7BÖ–Æ²ÒB‚"7&WV—&VÖVçBÖÖ–Æ²Ö6öVff–6–VçB"’çfÇVS°¢–b†6öç7FçBÓÒ""’FW&×2çW6‚‡²f7F÷#¢$4ôå5DåB"Â6öVff–6–VçC¢6öç7FçBÂW‡öæVçC¢Ò“°¢–b‡vV–v‡BÓÒ""’FW&×2çW6‚‡²f7F÷#¢$Ä•dUõtT”t…Eô´r"Â6öVff–6–VçC¢vV–v‡BÂW‡öæVçC¢B‚"7&WV—&VÖVçB×vV–v‡BÖW‡öæVçB"’çfÇVRÒ“°¢–b†Ö–Æ²ÓÒ""’FW&×2çW6‚‡²f7F÷#¢$dU$tUôD”Å•ôÔ”ÄµôÄ•DU%2"Â6öVff–6–VçC¢Ö–Æ²ÂW‡öæVçC¢B‚"7&WV—&VÖVçBÖÖ–Æ²ÖW‡öæVçB"’çfÇVRÒ“°¢&WGW&âFW&×3°§Ð ¦7–æ2gVæ7F–öâ†æFÆU&WV—&VÖVçE&öf–ÆU7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC²6öç7B÷WGWD6öFRÒB‚"7&WV—&VÖVçBÖ÷WGWB"’çfÇVS°¢G'’²v—Bf&Õ&W÷6—F÷'’æ7&VFTçWG&—F–öå&WV—&VÖVçE&öf–ÆR‡²æÖS¢B‚"7&WV—&VÖVçBÖæÖR"’çfÇVRÀ¢fW'6–öã¢B‚"7&WV—&VÖVçB×fW'6–öâ"’çfÇVRÂæ–ÖÄ6Æ73¢B‚"7&WV—&VÖVçBÖæ–ÖÂÖ6Æ72"’çfÇVRÀ¢çWG&–VçE7—7FVÓ¢B‚"7&WV—&VÖVçB×7—7FVÒ"’çfÇVRÂV&Æ–6F–öå–V#¢B‚"7&WV—&VÖVçB×–V""’çfÇVRÀ¢Æ–6&–Æ—G“¢B‚"7&WV—&VÖVçBÖÆ–6&–Æ—G’"’çfÇVRÂ6÷W&6UF—FÆS¢B‚"7&WV—&VÖVçB×6÷W&6R×F—FÆR"’çfÇVRÀ¢6÷W&6T6—FF–öã¢B‚"7&WV—&VÖVçBÖ6—FF–öâ"’çfÇVRÂ6÷W&6UW&Ã¢B‚"7&WV—&VÖVçB×W&Â"’çfÇVRÀ¢7WW'6W76–öå&F–öæÆS¢B‚"7&WV—&VÖVçB×7WW'6W76–öâ×&F–öæÆR"’çfÇVRÀ¢WVF–öç3¢·²÷WGWD6öFRÂ÷WGWEVæ—C¢&WV—&VÖVçEVæ—G5¶÷WGWD6öFUÒÂWVF–öå&VfW&Væ6S¢B‚"7&WV—&VÖVçBÖWVF–öâ×&VfW&Væ6R"’çfÇVRÀ¢FW&×3¢&WV—&VÖVçEFW&×4g&öÔf÷&Ò‚’ÕÒÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã²f÷&Òç&W6WB‚“²B‚"7&WV—&VÖVçB×vV–v‡BÖW‡öæVçB"’çfÇVRÒ##²B‚"7&WV—&VÖVçBÖÖ–Æ²ÖW‡öæVçB"’çfÇVRÒ##°¢v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“²6WE7FGW2‚%&WV—&VÖVçB&öf–ÆR6fVB2â–æ7F—fRG&gBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆU&WV—&VÖVçD&÷fÅ7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’²v—Bf&Õ&W÷6—F÷'’æ&÷fTçWG&—F–öå&WV—&VÖVçE&öf–ÆR‚B‚"7&WV—&VÖVçBÖ&÷fÂ×&öf–ÆR"’çfÇVRÀ¢²&Wf–WvW%W6W$–C¢7F—fUW6W$–BÂ&F–öæÆS¢B‚"7&WV—&VÖVçBÖ&÷fÂ×&F–öæÆR"’çfÇVRÀ¢&Wf–WvW$6öæf—&ÖVC¢B‚"7&WV—&VÖVçBÖ&÷fÂÖ6öæf—&ÖVB"’æ6†V6¶VBÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã²f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚%&WV—&VÖVçB&öf–ÆR&÷fVBâæò&V6öÖÖVæFF–öâv2vVæW&FVBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆU&WV—&VÖVçE&Wfö6F–öå7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’²v—Bf&Õ&W÷6—F÷'’ç&Wfö¶TçWG&—F–öå&WV—&VÖVçE&öf–ÆR‚B‚"7&WV—&VÖVçB×&Wfö6F–öâ×&öf–ÆR"’çfÇVRÀ¢²&Wf–WvW%W6W$–C¢7F—fUW6W$–BÂ&F–öæÆS¢B‚"7&WV—&VÖVçB×&Wfö6F–öâ×&F–öæÆR"’çfÇVRÀ¢&Wf–WvW$6öæf—&ÖVC¢B‚"7&WV—&VÖVçB×&Wfö6F–öâÖ6öæf—&ÖVB"’æ6†V6¶VBÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã²f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚%&WV—&VÖVçB&öf–ÆR&Wfö¶VC²VF—B†—7F÷'’&WF–æVBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTF–væ÷7F–5&öf–ÆU7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢6öç7B–çWBÒ²æÖS¢B‚"6F–væ÷7F–2ÖæÖR"’çfÇVRÂfW'6–öã¢B‚"6F–væ÷7F–2×fW'6–öâ"’çfÇVRÀ¢æ–ÖÄ6Æ73¢B‚"6F–væ÷7F–2Öæ–ÖÂÖ6Æ72"’çfÇVRÂÆ–6&–Æ—G“¢B‚"6F–væ÷7F–2ÖÆ–6&–Æ—G’"’çfÇVRÀ¢6÷W&6UF—FÆS¢B‚"6F–væ÷7F–2×6÷W&6R×F—FÆR"’çfÇVRÂ6÷W&6T6—FF–öã¢B‚"6F–væ÷7F–2Ö6—FF–öâ"’çfÇVRÀ¢6÷W&6UW&Ã¢B‚"6F–væ÷7F–2×W&Â"’çfÇVRÂV&Æ–6F–öå–V#¢B‚"6F–væ÷7F–2×–V""’çfÇVRÀ¢Ö–æ–×VÔf÷&vTDÔg&7F–öã¢B‚"6F–væ÷7F–2Öf÷&vR"’çfÇVRÂ7WW'6W76–öå&V6öã¢B‚"6F–væ÷7F–2×7WW'6W76–öâ×&V6öâ"’çfÇVRÀ¢Ö–æ–×VÔÔTFVç6—G”Ô¥W$¶tDÓ¢B‚"6F–væ÷7F–2ÖÖR"’çfÇVRÂÖ–æ–×VÔ5W&6VçDDÓ¢B‚"6F–væ÷7F–2Ö7"’çfÇVRÓ°¢6öç7B&Wf–÷W4–BÒB‚"6F–væ÷7F–2×7WW'6VFW2"’çfÇVS°¢–b‡&Wf–÷W4–B’v—Bf&Õ&W÷6—F÷'’ç7WW'6VFTF–væ÷7F–5&öf–ÆR‡&Wf–÷W4–BÂ–çWB“°¢VÇ6Rv—Bf&Õ&W÷6—F÷'’æ7&VFTF–væ÷7F–5&öf–ÆR†–çWB“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã²f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$F–væ÷7F–2&öf–ÆR6fVB–æ7F—fRâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTF–væ÷7F–56VÆV7F–öå7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’ç6VÆV7DF–væ÷7F–5&öf–ÆR‚B‚"6F–væ÷7F–2×6VÆV7F–öâ×&öf–ÆR"’çfÇVRÀ¢²&F–öæÆS¢B‚"6F–væ÷7F–2×6VÆV7F–öâ×&F–öæÆR"’çfÇVRÀ¢æ–ÖÄ–G3¢²âââB‚"6F–væ÷7F–2×6VÆV7F–öâÖæ–ÖÇ2"’ç6VÆV7FVD÷F–öç5ÒæÖ‚†÷F–öâ’Óâ÷F–öâçfÇVR’À¢Æ–6&–Æ—G”6öæf—&ÖVC¢B‚"6F–væ÷7F–2ÖÆ–6&–Æ—G’Ö6öæf—&ÖVB"’æ6†V6¶VBÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã²f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$F–væ÷7F–2&öf–ÆR6VÆV7FVBW‡Æ–6—FÇ’â"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTF–væ÷7F–4&6†—fU7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’æ&6†—fTF–væ÷7F–5&öf–ÆR‚B‚"6F–væ÷7F–2Ö&6†—fR×&öf–ÆR"’çfÇVRÂB‚"6F–væ÷7F–2Ö&6†—fR×&V6öâ"’çfÇVR“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã²f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$F–væ÷7F–2&öf–ÆR&6†—fVC²—G2†—7F÷&–6Â&Wf–Ww2vW&R&WF–æVBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ&VæFW$çWG&—F–öå&öf–ÆR†fVVD–BÂvVæW&F–öâÒ66W74vVæW&F–öâ’°¢6VÆV7FVDfVVD–BÒfVVD–BÇÂçVÆÃ°¢Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚%¶FFÖfVVBÖ–EÒ"’æf÷$V6‚‚‡&÷r’Óâ&÷ræ6Æ74Æ—7BçFövvÆR‚&7F—fR"Â&÷ræFF6WBæfVVD–BÓÓÒ6VÆV7FVDfVVD–B’“°¢B‚"6fVVBÖ6öæfÆ–7G2"’ç&WÆ6T6†–ÆG&Vâ‚“°¢B‚"6fVVB×&öf–ÆR"’ç&WÆ6T6†–ÆG&Vâ‚“°¢–b‚fVVD–B’°¢B‚"6fVVB×&öf–ÆR×F—FÆR"’çFW‡D6öçFVçBÒ%6VÆV7BfVVB#°¢B‚"6fVVB×&öf–ÆRÖV×G’"’æ†–FFVâÒfÇ6S°¢&WGW&ã°¢Ð¢6öç7B·&öf–ÆRÂ6VÆV7F–öç5ÒÒv—B&öÖ—6RæÆÂ…´f&Õ&W÷6—F÷'’ævWDçWG&—F–öå&öf–ÆR†fVVD–B’À¢f&Õ&W÷6—F÷'’ævWDçWG&—F–öå6VÆV7F–öç2†fVVD–B•Ò“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’ÇÂ6VÆV7FVDfVVD–BÓÒfVVD–BÇÂ&öf–ÆRÇÂ6VÆV7F–öç2’&WGW&ã°¢B‚"6fVVB×&öf–ÆR×F—FÆR"’çFW‡D6öçFVçBÒ&öf–ÆRæfVVBææÖS°¢6öç7Bw&÷W2Òö&¦V7BæVçG&–W2‡&öf–ÆRæçWG&–VçG2“°¢B‚"6fVVB×&öf–ÆRÖV×G’"’æ†–FFVâÒw&÷W2æÆVæwF‚â°¢B‚"6fVVB×&öf–ÆRÖV×G’"’çFW‡D6öçFVçBÒw&÷W2æÆVæwF‚ò""¢$æòçWG&—F–öâö'6W'fF–öç2†fR&VVâ&V6÷&FVBf÷"F†—2fVVBâ#°¢B‚"6fVVBÖ6öæfÆ–7G2"’æ–ææW$…DÔÂÒ&öf–ÆRæ6öæfÆ–7G2æÖ‚†6öFR’Óà¢sÆF—b6Æ73Ò&fVVBÖ6öæfÆ–7B#ä6öæfÆ–7F–ærr²W66T‡FÖÂ†çWG&–VçDÆ&VÇ5¶6öFUÒÇÂ6öFR’²rö'6W'fF–öç2&WF–æVBf÷"&Wf–Ws²æòfW&vRv26Æ7VÆFVBãÂöF—câr’æ¦ö–â‚""“°¢B‚"6fVVB×&öf–ÆR"’æ–ææW$…DÔÂÒw&÷W2æÖ‚…¶6öFRÂ&÷w5Ò’ÓâsÇ6V7F–öâ6Æ73Ò&çWG&–VçBÖw&÷W#ãÆƒCâr°¢W66T‡FÖÂ†çWG&–VçDÆ&VÇ5¶6öFUÒÇÂ6öFR’²sÂöƒCâr²&÷w2æÖ‚‡&÷r’ÓâsÆF—b6Æ73Ò&ö'6W'fF–öâ#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡&÷rçfÇVR²""²&÷rçVæ—Bç&WÆ6TÆÂ‚%ò"Â""’’²sÂ÷7G&öæsãÇ6ÖÆÃâr°¢W66T‡FÖÂ‡&÷ræWf–FVæ6T6Æ72ç&WÆ6TÆÂ‚%ò"Â""’²"+r"²‡&÷ræö'6W'fVDBÇÂ$FFRæ÷B&V6÷&FVB"’’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡&÷rç6÷W&6RçF—FÆR²"(	B"²&÷rç6÷W&6Ræ6—FF–öâ’²sÂ÷6ÖÆÃâr°¢‡&÷ræ6öçFW‡BòsÇ6ÖÆÃâr²W66T‡FÖÂ‡&÷ræ6öçFW‡B’²sÂ÷6ÖÆÃâr¢rr’²sÂöF—câr’æ¦ö–â‚""’²sÂ÷6V7F–öãâr’æ¦ö–â‚""“°¢6öç7Bö'6W'fF–öç2Òw&÷W2æfÆDÖ‚…¶6öFRÂ&÷w5Ò’Óâ&÷w2æÖ‚‡&÷r’Óâ‡²ââç&÷rÂ6öFRÒ’’“°¢B‚"6fVVB×6VÆV7F–öâÖf÷&Ò"’æ†–FFVâÒö'6W'fF–öç2æÆVæwF‚ÓÓÒ°¢B‚"6fVVB×6VÆV7F–öâÖö'6W'fF–öâ"’ç&WÆ6T6†–ÆG&Vâ†æWr÷F–öâ‚$6†ö÷6Râö'6W'fF–öâ"Â""’Âââæö'6W'fF–öç2æÖ‚‡&÷r’Óà¢æWr÷F–öâ‚†çWG&–VçDÆ&VÇ5·&÷ræ6öFUÒÇÂ&÷ræ6öFR’²"+r"²&÷rçfÇVR²""²&÷rçVæ—Bç&WÆ6TÆÂ‚%ò"Â""’²"+r"²&÷rç6÷W&6RçF—FÆRÂ&÷ræ–B’’“°¢B‚"6fVVBÖ7W'&VçB×6VÆV7F–öç2"’æ–ææW$…DÔÂÒö&¦V7BæVçG&–W2‡6VÆV7F–öç2’æÖ‚…¶6öFRÂ6VÆV7F–öåÒ’Óà¢sÆF—b6Æ73Ò&Wf–FVæ6R×&÷r6VÆV7F–öâÖ7W'&VçB#ãÇ7G&öæså6VÆV7FVBr²W66T‡FÖÂ†çWG&–VçDÆ&VÇ5¶6öFUÒÇÂ6öFR’²sÂ÷7G&öæsãÇ6ÖÆÃâr°¢W66T‡FÖÂ‡6VÆV7F–öâæö'6W'fF–öâò6VÆV7F–öâæö'6W'fF–öâçfÇVR²""²6VÆV7F–öâæö'6W'fF–öâçVæ—Bç&WÆ6TÆÂ‚%ò"Â""’¢$ö'6W'fF–öâVæf–Æ&ÆR"’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ‡6VÆV7F–öâç6÷W&6Sòæ6—FF–öâÇÂ%6÷W&6RVæf–Æ&ÆR"’²sÂ÷6ÖÆÃãÇ6ÖÆÃå&F–öæÆS¢r°¢W66T‡FÖÂ‡6VÆV7F–öâç&F–öæÆR’²sÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°§Ð ¦7–æ2gVæ7F–öâ&Vg&W6„fVVEv÷&·76R†vVæW&F–öâÒ66W74vVæW&F–öâ’°¢6öç7B&Vg&W6„vVæW&F–öâÒ²¶fVVE&Vg&W6„vVæW&F–öã°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢6öç7B¶fVVG2Â6÷W&6W2Â6÷7E6÷W&6W2Â&F6†W2ÂF–væ÷7F–5&öf–ÆW2ÂF–væ÷7F–56VÆV7F–öâÂF–væ÷7F–4†—7F÷'’ÂÆÆö6F–öä†—7F÷'’Âæ–ÖÇ2À¢&WV—&VÖVçE&öf–ÆW2Â&WV—&VÖVçE&Wf–Ww5ÒÒv—B&öÖ—6RæÆÂ…´f&Õ&W÷6—F÷'’æÆ—7DfVVG2‚’À¢f&Õ&W÷6—F÷'’æÆ—7DçWG&—F–öå6÷W&6W2‚’Âf&Õ&W÷6—F÷'’æÆ—7DfVVD6÷7E6÷W&6W2‚’Âf&Õ&W÷6—F÷'’æÆ—7DfVVD–çfVçF÷'”&F6†W2‚’À¢f&Õ&W÷6—F÷'’æÆ—7DF–væ÷7F–5&öf–ÆW2‡²–æ6ÇVFT&6†—fVC¢G'VRÒ’Âf&Õ&W÷6—F÷'’ævWE6VÆV7FVDF–væ÷7F–5&öf–ÆR‚’À¢f&Õ&W÷6—F÷'’æÆ—7DF–væ÷7F–5v&æ–æt†—7F÷'’‚’Âf&Õ&W÷6—F÷'’æÆ—7E&F–öäÆÆö6F–öäWf–FVæ6R‚’Âf&Õ&W÷6—F÷'’æÆ—7Dæ–ÖÇ2‚’À¢f&Õ&W÷6—F÷'’æÆ—7DçWG&—F–öå&WV—&VÖVçE&öf–ÆW2‡²–æ6ÇVFTG&gG3¢G'VRÒ’Âf&Õ&W÷6—F÷'’æÆ—7DçWG&—F–öå&WV—&VÖVçE&öf–ÆU&Wf–Ww2‚•Ò“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’ÇÂ&Vg&W6„vVæW&F–öâÓÒfVVE&Vg&W6„vVæW&F–öâ’&WGW&ã°¢6öç7B6VÆV7F–öå&÷w2Òv—B&öÖ—6RæÆÂ†fVVG2æÖ†7–æ2†fVVB’Óâ¶fVVBæ–BÂv—Bf&Õ&W÷6—F÷'’ævWDçWG&—F–öå6VÆV7F–öç2†fVVBæ–B•Ò’“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’ÇÂ&Vg&W6„vVæW&F–öâÓÒfVVE&Vg&W6„vVæW&F–öâ’&WGW&ã°¢6öç7B6VÆV7F–öç4'”fVVBÒæWrÖ‡6VÆV7F–öå&÷w2“°¢B‚"6fVVBÖ6÷VçB"’çFW‡D6öçFVçBÒfVVG2æÆVæwF‚²†fVVG2æÆVæwF‚ÓÓÒò"fVVB"¢"fVVG2"“°¢B‚"6fVVB×6÷W&6RÖ6÷VçB"’çFW‡D6öçFVçBÒ6÷W&6W2æÆVæwF‚²‡6÷W&6W2æÆVæwF‚ÓÓÒò"6÷W&6R"¢"6÷W&6W2"“°¢B‚"6fVVBÖ6÷7B×6÷W&6RÖ6÷VçB"’çFW‡D6öçFVçBÒ6÷7E6÷W&6W2æÆVæwF‚²†6÷7E6÷W&6W2æÆVæwF‚ÓÓÒò"6÷W&6R"¢"6÷W&6W2"“°¢B‚"6fVVBÖ–çfVçF÷'’Ö6÷VçB"’çFW‡D6öçFVçBÒ&F6†W2æÆVæwF‚²†&F6†W2æÆVæwF‚ÓÓÒò"&F6‚"¢"&F6†W2"“°¢6öç7BÖ÷fVÖVçG2Ò&F6†W2æfÆDÖ‚†&F6‚’Óâ&F6‚æÖ÷fVÖVçG2æÖ‚†Ö÷fVÖVçB’Óâ‡²ââæÖ÷fVÖVçBÂ&F6‚Ò’’“°¢B‚"6fVVBÖÖ÷fVÖVçBÖ6÷VçB"’çFW‡D6öçFVçBÒÖ÷fVÖVçG2æÆVæwF‚²†Ö÷fVÖVçG2æÆVæwF‚ÓÓÒò"Ö÷fVÖVçB"¢"Ö÷fVÖVçG2"“°¢B‚"6fVVBÖV×G’"’æ†–FFVâÒfVVG2æÆVæwF‚â°¢B‚"6fVVB×6÷W&6RÖV×G’"’æ†–FFVâÒ6÷W&6W2æÆVæwF‚â°¢B‚"6fVVBÖ6÷7B×6÷W&6RÖV×G’"’æ†–FFVâÒ6÷7E6÷W&6W2æÆVæwF‚â°¢B‚"6fVVBÖ–çfVçF÷'’ÖV×G’"’æ†–FFVâÒ&F6†W2æÆVæwF‚â°¢B‚"6fVVBÖÖ÷fVÖVçBÖV×G’"’æ†–FFVâÒÖ÷fVÖVçG2æÆVæwF‚â°¢B‚"6fVVBÖÆ—7B"’æ–ææW$…DÔÂÒfVVG2æÖ‚†fVVB’ÓâsÆ'WGFöâG—SÒ&'WGFöâ"6Æ73Ò&fVVB×&÷r"FFÖfVVBÖ–CÒ"r°¢W66T‡FÖÂ†fVVBæ–B’²r#ãÇ7ããÇ7G&öæsâr²W66T‡FÖÂ†fVVBææÖR’²sÂ÷7G&öæsãÇ6ÖÆÃâr°¢W66T‡FÖÂ†fVVE&öÆTÆ&VÇ5¶fVVBç&öÆUÒÇÂfVVBç&öÆR’²sÂ÷6ÖÆÃãÂ÷7ããÇ7â&–Ö†–FFVãÒ'G'VR#å&Wf–Wr(i#Â÷7ããÂö'WGFöãâr’æ¦ö–â‚""“°¢B‚"6fVVB×6÷W&6RÖÆ—7B"’æ–ææW$…DÔÂÒ6÷W&6W2æÖ‚‡6÷W&6R’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡6÷W&6RçF—FÆR’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡6÷W&6Rç6÷W&6UG—Rç&WÆ6TÆÂ‚%ò"Â""’’°¢‡6÷W&6RçV&Æ–6F–öå–V"ò"+r"²6÷W&6RçV&Æ–6F–öå–V"¢""’²sÂ÷6ÖÆÃãÇ6ÖÆÃâr°¢W66T‡FÖÂ‡6÷W&6Ræ6—FF–öâ’²sÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°¢B‚"6fVVBÖ6÷7B×6÷W&6RÖÆ—7B"’æ–ææW$…DÔÂÒ6÷7E6÷W&6W2æÖ‚‡6÷W&6R’ÓâsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr°¢W66T‡FÖÂ‡6÷W&6Rç&VfW&Væ6R’²sÂ÷7G&öæsãÇ6ÖÆÃâr²W66T‡FÖÂ‡6÷W&6Rç6÷W&6UG—Rç&WÆ6TÆÂ‚%ò"Â""’²"+r"²6÷W&6RæFö7VÖVçDFFR’°¢sÂ÷6ÖÆÃâr²‡6÷W&6Ræ6÷VçFW''G’òsÇ6ÖÆÃâr²W66T‡FÖÂ‡6÷W&6Ræ6÷VçFW''G’’²sÂ÷6ÖÆÃâr¢rr’²sÂöF—câr’æ¦ö–â‚""“°¢B‚"6fVVBÖ–çfVçF÷'’ÖÆ—7B"’æ–ææW$…DÔÂÒ&F6†W2æÖ‚†&F6‚’Óâ°¢6öç7BVæ—D6÷7BÒVæ—D6÷7EW$¶r†&F6‚“°¢&WGW&âsÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr²W66T‡FÖÂ†&F6‚æfVVCòææÖRÇÂ$fVVBVæf–Æ&ÆR"’²sÂ÷7G&öæsãÇ6ÖÆÃâr°¢W66T‡FÖÂ†&F6‚ç&VÖ–æ–æuVçF—G”¶r²"¶r&VÖ–æ–æröb"²&F6‚ç&V6V—fVEVçF—G”¶r²"¶r&V6V—fVB+r"²&F6‚ç&V6V—fVDB’²sÂ÷6ÖÆÃãÇ6ÖÆÃâr°¢W66T‡FÖÂ†f÷&ÖD&F6„ÖöæW’†&F6‚çF÷FÄ6÷7D6VçG2Â&F6‚æ7W'&Væ7”6öFR’²‡Væ—D6÷7BÓÓÒçVÆÂò""¢"+r"°¢f÷&ÖD&F6„ÖöæW’„ÖF‚ç&÷VæB‡Væ—D6÷7B’Â&F6‚æ7W'&Væ7”6öFR’²"ö¶r"’’²sÂ÷6ÖÆÃãÇ6ÖÆÃä6÷7B6÷W&6S¢r°¢W66T‡FÖÂ†&F6‚æ6÷7E6÷W&6Sòç&VfW&Væ6RÇÂ%6÷W&6RVæf–Æ&ÆR"’²sÂ÷6ÖÆÃãÂöF—câs°¢Ò’æ¦ö–â‚""“°¢B‚"6fVVBÖÖ÷fVÖVçBÖÆ—7B"’æ–ææW$…DÔÂÒÖ÷fVÖVçG2ç6÷'B‚†Â"’Óâ"æ7&VFVDBæÆö6ÆT6ö×&R†æ7&VFVDB’’æÖ‚†Ö÷fVÖVçB’Óà¢sÆF—b6Æ73Ò&Wf–FVæ6R×&÷r#ãÇ7G&öæsâr²W66T‡FÖÂ†Ö÷fVÖVçBæ&F6‚æfVVCòææÖRÇÂ$fVVBVæf–Æ&ÆR"’²sÂ÷7G&öæsãÇ6ÖÆÃâr°¢W66T‡FÖÂ†Ö÷fVÖVçBæÖ÷fVÖVçEG—Rç&WÆ6TÆÂ‚%ò"Â""’²"+r"²Ö÷fVÖVçBæ–çWEVçF—G’²""²Ö÷fVÖVçBæ–çWEVæ—Bç&WÆ6TÆÂ‚%ô5ôdTB"Â""’ç&WÆ6TÆÂ‚%ò"Â""’²"+r"²Ö÷fVÖVçBæÖ÷fVÖVçDFFR’°¢sÂ÷6ÖÆÃãÇ6ÖÆÃâr²W66T‡FÖÂ†Ö÷fVÖVçBç&V6öâ’²sÂ÷6ÖÆÃãÂöF—câr’æ¦ö–â‚""“°¢&VæFW$fVVD÷F–öç2†fVVG2Â6÷W&6W2“°¢&VæFW$–çfVçF÷'”÷F–öç2†fVVG2Â6÷7E6÷W&6W2“°¢&VæFW$Ö÷fVÖVçD÷F–öç2†&F6†W2“°¢&VæFW%&F–öå&Wf–Wr†&F6†W2Â6VÆV7F–öç4'”fVVB“°¢&VæFW$F–væ÷7F–5&öf–ÆW2†F–væ÷7F–5&öf–ÆW2ÂF–væ÷7F–56VÆV7F–öâÀ¢æ–ÖÇ2æf–ÇFW"‚†æ–ÖÂ’Óâ²&7F—fR"Â&G'’%Òæ–æ6ÇVFW2†æ–ÖÂç7FGW2’’ÂF–væ÷7F–4†—7F÷'’“°¢&VæFW%&F–öäÆÆö6F–öäWf–FVæ6R†F–væ÷7F–4†—7F÷'’ÂÆÆö6F–öä†—7F÷'’“°¢&VæFW%&WV—&VÖVçE&öf–ÆW2‡&WV—&VÖVçE&öf–ÆW2Â&WV—&VÖVçE&Wf–Ww2“°¢–b‚fVVG2ç6öÖR‚†fVVB’ÓâfVVBæ–BÓÓÒ6VÆV7FVDfVVD–B’’6VÆV7FVDfVVD–BÒfVVG5³Óòæ–BÇÂçVÆÃ°¢–b‡6VÆV7FVDfVVD–B’B‚"6fVVBÖö'6W'fF–öâÖfVVB"’çfÇVRÒ6VÆV7FVDfVVD–C°¢v—B&VæFW$çWG&—F–öå&öf–ÆR‡6VÆV7FVDfVVD–BÂvVæW&F–öâ“°§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVD6÷7E6÷W&6U7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’æ7&VFTfVVD6÷7E6÷W&6R‡²6÷W&6UG—S¢B‚"6fVVBÖ6÷7B×G—R"’çfÇVRÀ¢&VfW&Væ6S¢B‚"6fVVBÖ6÷7B×&VfW&Væ6R"’çfÇVRÂ6÷VçFW''G“¢B‚"6fVVBÖ6÷7BÖ6÷VçFW''G’"’çfÇVRÀ¢Fö7VÖVçDFFS¢B‚"6fVVBÖ6÷7BÖFFR"’çfÇVRÂæ÷FW3¢B‚"6fVVBÖ6÷7BÖæ÷FW2"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²B‚"6fVVBÖ6÷7BÖFFR"’çfÇVRÒFôÆö6ÄFFU7G&–ær‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$fVVB6÷7B6÷W&6R6fVBf÷"&Wf–Wrâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVD&F6…7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’æ7&VFTfVVD–çfVçF÷'”&F6‚‚B‚"6fVVBÖ&F6‚ÖfVVB"’çfÇVRÂ°¢6÷7E6÷W&6T–C¢B‚"6fVVBÖ&F6‚Ö6÷7B×6÷W&6R"’çfÇVRÂ&V6V—fVDC¢B‚"6fVVBÖ&F6‚ÖFFR"’çfÇVRÀ¢&V6V—fVEVçF—G”¶s¢B‚"6fVVBÖ&F6‚×VçF—G’"’çfÇVRÂF÷FÄ6÷7C¢B‚"6fVVBÖ&F6‚×F÷FÂÖ6÷7B"’çfÇVRÀ¢7W'&Væ7”6öFS¢B‚"6fVVBÖ&F6‚Ö7W'&Væ7’"’çfÇVRÂÆ÷E&VfW&Væ6S¢B‚"6fVVBÖ&F6‚ÖÆ÷B"’çfÇVRÀ¢7F÷&vTÆö6F–öã¢B‚"6fVVBÖ&F6‚ÖÆö6F–öâ"’çfÇVRÂæ÷FW3¢B‚"6fVVBÖ&F6‚Öæ÷FW2"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²B‚"6fVVBÖ&F6‚ÖFFR"’çfÇVRÒFôÆö6ÄFFU7G&–ær‚“²B‚"6fVVBÖ&F6‚Ö7W'&Væ7’"’çfÇVRÒ$´U2#°¢v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“²6WE7FGW2‚$fVVB–çfVçF÷'’&F6‚6fVBf÷"&Wf–Wrâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVDÖ÷fVÖVçE7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’ç&V6÷&DfVVD–çfVçF÷'”Ö÷fVÖVçB‚B‚"6fVVBÖÖ÷fVÖVçBÖ&F6‚"’çfÇVRÂ°¢Ö÷fVÖVçEG—S¢B‚"6fVVBÖÖ÷fVÖVçB×G—R"’çfÇVRÂÖ÷fVÖVçDFFS¢B‚"6fVVBÖÖ÷fVÖVçBÖFFR"’çfÇVRÀ¢VçF—G“¢B‚"6fVVBÖÖ÷fVÖVçB×VçF—G’"’çfÇVRÂVæ—C¢B‚"6fVVBÖÖ÷fVÖVçB×Væ—B"’çfÇVRÀ¢&V6öã¢B‚"6fVVBÖÖ÷fVÖVçB×&V6öâ"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²B‚"6fVVBÖÖ÷fVÖVçBÖFFR"’çfÇVRÒFôÆö6ÄFFU7G&–ær‚“°¢v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“²6WE7FGW2‚$fVVB–çfVçF÷'’Ö÷fVÖVçB6fVBâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVE6VÆV7F–öå7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’ç6VÆV7DçWG&—F–öäö'6W'fF–öâ‡6VÆV7FVDfVVD–BÂ²ö'6W'fF–öä–C¢B‚"6fVVB×6VÆV7F–öâÖö'6W'fF–öâ"’çfÇVRÀ¢&F–öæÆS¢B‚"6fVVB×6VÆV7F–öâ×&F–öæÆR"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$çWG&—F–öâWf–FVæ6R6VÆV7F–öâ&V6÷&FVBf÷"&Wf–Wrâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVE7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢6öç7BfVVBÒv—Bf&Õ&W÷6—F÷'’æ7&VFTfVVB‡²æÖS¢B‚"6fVVBÖæÖR"’çfÇVRÂ&öÆS¢B‚"6fVVB×&öÆR"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²6VÆV7FVDfVVD–BÒfVVBæ–C²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$fVVBFFVBFòF†—2f&ÒÆ–'&'’â"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVE6÷W&6U7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢v—Bf&Õ&W÷6—F÷'’æ7&VFTçWG&—F–öå6÷W&6R‡²F—FÆS¢B‚"6fVVB×6÷W&6R×F—FÆR"’çfÇVRÀ¢6÷W&6UG—S¢B‚"6fVVB×6÷W&6R×G—R"’çfÇVRÂ6—FF–öã¢B‚"6fVVB×6÷W&6RÖ6—FF–öâ"’çfÇVRÀ¢V&Æ—6†W#¢B‚"6fVVB×6÷W&6R×V&Æ—6†W""’çfÇVRÂV&Æ–6F–öå–V#¢B‚"6fVVB×6÷W&6R×–V""’çfÇVRÀ¢W&Ã¢B‚"6fVVB×6÷W&6R×W&Â"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢f÷&Òç&W6WB‚“²v—B&Vg&W6„fVVEv÷&·76R†vVæW&F–öâ“°¢6WE7FGW2‚$Wf–FVæ6R6÷W&6R6fVBf÷"&Wf–Wrâ"Â'7V66W72"“°¢Ò6F6‚†W'&÷"’²–b†6å6†÷tf&ÔFF†vVæW&F–öâ’’6WE7FGW2†W'&÷"æÖW76vRÇÂ7G&–ær†W'&÷"’Â&W'&÷""“²Ð§Ð ¦7–æ2gVæ7F–öâ†æFÆTfVVDö'6W'fF–öå7V&Ö—B†WfVçB’°¢WfVçBç&WfVçDFVfVÇB‚“²6öç7BvVæW&F–öâÒ66W74vVæW&F–öã²6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°¢G'’°¢6öç7BfVVD–BÒB‚"6fVVBÖö'6W'fF–öâÖfVVB"’çfÇVS°¢v—Bf&Õ&W÷6—F÷'’æ7&VFTçWG&—F–öäö'6W'fF–öâ†fVVD–BÂ²6÷W&6T–C¢B‚"6fVVBÖö'6W'fF–öâ×6÷W&6R"’çfÇVRÀ¢çWG&–VçD6öFS¢B‚"6fVVBÖö'6W'fF–öâÖçWG&–VçB"’çfÇVRÂfÇVS¢B‚"6fVVBÖö'6W'fF–öâ×fÇVR"’çfÇVRÀ¢Væ—C¢B‚"6fVVBÖö'6W'fF–öâ×Væ—B"’çfÇVRÂ&6—3¢B‚"6fVVBÖö'6W'fF–öâÖ&6—2"’çfÇVRÀ¢Wf–FVæ6T6Æ73¢B‚"6fVVBÖö'6W'fF–öâÖWf–FVæ6R"’çfÇVRÀ¢ö'6W'fVDC¢B‚"6fVVBÖö'6W'fF–öâÖFFR"’çfÇVRÇÂçVÆÂÂ&ævTÖ–ã¢B‚"6fVVBÖö'6W'fF–öâÖÖ–â"’çfÇVRÀ¢&ævTÖƒ¢B‚"6fVVBÖö'6W'fF–öâÖÖ‚"’çfÇVRÂ6×ÆT6÷VçC¢B‚"6fVVBÖö'6W'fF–öâ×6×ÆW2"’çfÇVRÀ¢6öçFW‡C¢B‚"6fVVBÖö'6W'fF–öâÖ6öçFW‡B"’çfÇVRÒ“°¢–b‚6å6†÷tf&ÔFF†vVæW&F–öâ’’&WGW&ã°¢fþ9ÚÚ$z{-®éÜj×ntent = herd.calves;
   $("#today-milk").textContent = milk.totalLiters.toFixed(1) + " L";
   $("#today-value").textContent = "KSh " + calculateMilkValue(milk.totalLiters).toLocaleString();
   $("#sync-count").textContent = pending;
@@ -764,16 +91,23 @@ function renderRequirementCalculations(classifications, profiles, applicabilityR
     ' Â· immutable calculation Â· no ration recommendation or inventory movement</small></div>').join("");
 }
 
-function renderRequirementRationComparisonOptions(animalId, calculations, rationReviews) {
+function renderRequirementRationComparisonOptions(animalId, calculations, rationReviews, allocationReviews) {
   comparisonRequirementCalculations = calculations;
-  comparisonRationReviews = rationReviews.filter((row) => row.rationBasis === "DAILY_OFFERED_RATION" &&
-    row.rationBasisConfirmed === true && row.animalGroup?.length === 1 && row.animalGroup[0].id === animalId);
+  const daily = rationReviews.filter((row) => row.rationBasis === "DAILY_OFFERED_RATION" && row.rationBasisConfirmed === true &&
+    row.animalGroup?.some((animal) => animal.id === animalId));
+  comparisonRationReviews = daily.flatMap((rationReview) => {
+    if (rationReview.animalGroup.length === 1) return [{ key: rationReview.id, rationReview, allocationReview: null }];
+    return allocationReviews.filter((review) => review.rationReviewId === rationReview.id &&
+      review.allocations?.some((allocation) => allocation.animalId === animalId)).map((allocationReview) =>
+      ({ key: rationReview.id + "::" + allocationReview.id, rationReview, allocationReview }));
+  });
   $("#requirement-ration-comparison-form").hidden = !calculations.length || !comparisonRationReviews.length;
   $("#requirement-ration-comparison-empty").hidden = !calculations.length || comparisonRationReviews.length > 0;
   $("#requirement-ration-calculation").replaceChildren(new Option("Choose calculation", ""), ...calculations.map((row) =>
     new Option(row.sourceTitle + " Â· " + row.calculatedAt, row.id)));
-  $("#requirement-ration-review").replaceChildren(new Option("Choose ration review", ""), ...comparisonRationReviews.map((row) =>
-    new Option(row.profileName + " v" + row.profileVersion + " Â· " + row.calculatedAt, row.id)));
+  $("#requirement-ration-review").replaceChildren(new Option("Choose ration evidence", ""), ...comparisonRationReviews.map((row) =>
+    new Option(row.rationReview.profileName + " v" + row.rationReview.profileVersion + " Â· " + row.rationReview.calculatedAt +
+      (row.allocationReview ? " Â· documented individual allocation" : " Â· single animal"), row.key)));
   $("#requirement-ration-comparison-result").replaceChildren();
   $("#requirement-ration-review-form").hidden = true;
   currentComparisonEvidence = null;
@@ -783,9 +117,11 @@ function handleRequirementRationComparison(event) {
   event.preventDefault();
   try {
     const requirement = comparisonRequirementCalculations.find((row) => row.id === $("#requirement-ration-calculation").value);
-    const ration = comparisonRationReviews.find((row) => row.id === $("#requirement-ration-review").value);
-    const report = compareRequirementToRationEvidence(requirement, ration, selectedAnimalId);
-    currentComparisonEvidence = { requirementCalculationId: requirement.id, rationReviewId: ration.id };
+    const rationEvidence = comparisonRationReviews.find((row) => row.key === $("#requirement-ration-review").value);
+    const report = compareRequirementToRationEvidence(requirement, rationEvidence?.rationReview, selectedAnimalId,
+      rationEvidence?.allocationReview);
+    currentComparisonEvidence = { requirementCalculationId: requirement.id, rationReviewId: rationEvidence.rationReview.id,
+      allocationReviewId: rationEvidence.allocationReview?.id || null };
     const labels = { BELOW_DOCUMENTED_REQUIREMENT: "Below documented requirement", ABOVE_DOCUMENTED_REQUIREMENT: "Above documented requirement",
       MATCHES_DOCUMENTED_REQUIREMENT: "Matches documented requirement" };
     const rows = report.comparisons.map((row) => '<div class="evidence-row"><strong>' + escapeHtml(row.outputCode + " Â· " + labels[row.status]) +
@@ -797,6 +133,7 @@ function handleRequirementRationComparison(event) {
     $("#requirement-ration-comparison-result").innerHTML = '<div class="feed-list">' + rows + '</div>' + omitted +
       '<p class="muted">Attribution: requirement calculation ' + escapeHtml(report.attribution.requirementCalculationId) +
       ' Â· ration review ' + escapeHtml(report.attribution.rationReviewId) +
+      (report.attribution.allocation ? ' Â· allocation review ' + escapeHtml(report.attribution.allocation.allocationReviewId) : '') +
       '. Arithmetic comparison only; no adequacy judgment or feed recommendation.</p>';
     $("#requirement-ration-review-form").hidden = false;
     setStatus("Read-only requirement and ration evidence comparison completed.", "success");
@@ -821,6 +158,7 @@ async function handleRequirementRationReviewSubmit(event) {
   try {
     await FarmRepository.reviewRequirementRationComparison(currentComparisonEvidence.requirementCalculationId,
       currentComparisonEvidence.rationReviewId, { decision: $("#requirement-ration-review-decision").value,
+        allocationReviewId: currentComparisonEvidence.allocationReviewId,
         rationale: $("#requirement-ration-review-rationale").value, reviewerUserId: activeUserId,
         reviewerConfirmed: $("#requirement-ration-review-confirmed").checked });
     if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
@@ -857,17 +195,18 @@ async function openAnimal(animalId) {
     image.hidden = true;
   }
   const [classifications, reviews, profiles, requirementProfiles, applicabilityReviews, requirementCalculations, rationReviews,
-    comparisonReviews] = await Promise.all([
+    allocationReviews, comparisonReviews] = await Promise.all([
     FarmRepository.listAnimalNutritionClassifications(animalId), FarmRepository.listAnimalNutritionClassificationReviews(animalId),
     FarmRepository.listDiagnosticProfiles({ includeArchived: false }), FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }),
     FarmRepository.listNutritionRequirementApplicabilityReviews(animalId), FarmRepository.listNutritionRequirementCalculations(animalId),
-    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listRequirementRationComparisonReviews(animalId)]);
+    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listRationAllocationEvidence(),
+    FarmRepository.listRequirementRationComparisonReviews(animalId)]);
   if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
   renderAnimalNutritionClassifications(classifications);
   renderAnimalNutritionReviews(classifications, reviews, profiles);
   renderRequirementApplicability(classifications, requirementProfiles, applicabilityReviews);
   renderRequirementCalculations(classifications, requirementProfiles, applicabilityReviews, requirementCalculations);
-  renderRequirementRationComparisonOptions(animalId, requirementCalculations, rationReviews);
+  renderRequirementRationComparisonOptions(animalId, requirementCalculations, rationReviews, allocationReviews);
   renderRequirementRationReviews(comparisonReviews);
 }
 

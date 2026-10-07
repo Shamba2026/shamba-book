@@ -33,7 +33,7 @@ assert.ok(Object.isFrozen(report));
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, farmId: "farm-2" }, "animal-1"), /same farm/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, animalGroup: [] }, "animal-1"), /animal group/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration,
-  animalGroup: [{ id: "animal-1" }, { id: "animal-2" }] }, "animal-1"), /single animal/);
+  animalGroup: [{ id: "animal-1" }, { id: "animal-2" }] }, "animal-1"), /per-animal allocation/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, rationBasisConfirmed: false }, "animal-1"), /daily offered ration/);
 assert.throws(() => compareRequirementToRationEvidence(requirement, { ...ration, rationBasis: undefined }, "animal-1"), /daily offered ration/);
 assert.throws(() => compareRequirementToRationEvidence({ ...requirement, outputs: [{ outputCode: "DMI_KG_DAY", outputUnit: "kg/day", value: 10 }] }, ration, "animal-1"), /unit/);
@@ -44,5 +44,18 @@ assert.deepEqual(validateComparisonReview({ decision: "ACKNOWLEDGED", rationale:
 });
 assert.throws(() => validateComparisonReview({ decision: "APPROVED", rationale: "Not supported", reviewerUserId: "r", reviewerConfirmed: true }), /decision/);
 assert.throws(() => validateComparisonReview({ decision: "NEEDS_EVIDENCE_REVIEW", rationale: "Further evidence review is required.", reviewerUserId: "r", reviewerConfirmed: false }), /confirm/);
+
+const groupRation = { ...ration, id: "ration-group", animalGroup: [{ id: "animal-1" }, { id: "animal-2" }],
+  ration: { ...ration.ration, totalDMIKg: 16 } };
+const allocation = { id: "allocation-1", farmId: "farm-1", rationReviewId: "ration-group",
+  allocationMethod: "DOCUMENTED_INGREDIENT_WEIGHTS", reviewerConfirmed: true, reviewedAt: "2026-10-07T08:00:00.000Z",
+  allocations: [{ animalId: "animal-1", ration: ration.ration }, { animalId: "animal-2", ration: { ...ration.ration } }] };
+const allocatedReport = compareRequirementToRationEvidence(requirement, groupRation, "animal-1", allocation);
+assert.equal(allocatedReport.comparisons[0].suppliedValue, 8, "must compare the animal allocation, not the group total");
+assert.deepEqual(allocatedReport.attribution.allocation, { allocationReviewId: "allocation-1",
+  allocationMethod: "DOCUMENTED_INGREDIENT_WEIGHTS", allocationReviewedAt: "2026-10-07T08:00:00.000Z" });
+assert.throws(() => compareRequirementToRationEvidence(requirement, groupRation, "animal-1", { ...allocation, farmId: "farm-2" }), /same farm/);
+assert.throws(() => compareRequirementToRationEvidence(requirement, groupRation, "animal-1", { ...allocation,
+  allocations: [{ animalId: "animal-2", ration: ration.ration }] }), /selected animal/);
 
 console.log("requirement-ration-comparison.test.js: PASS");

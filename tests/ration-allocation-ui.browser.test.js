@@ -39,7 +39,17 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
         { feedId: "silage", feedName: "Synthetic silage", role: "forage", asFedKg: 20, dmKg: 6, meMJ: 60, cpKg: 0.6, costCents: 2000 },
         { feedId: "meal", feedName: "Synthetic meal", role: "concentrate", asFedKg: 4, dmKg: 3.6, meMJ: 39.6, cpKg: 0.72, costCents: 800 }
       ] }, findingCodes: ["NO_CONFIGURED_THRESHOLD_TRIGGERED"] };
-    try { await new Promise((resolve, reject) => { const tx = db.transaction("feed_diagnostic_warning_events", "readwrite"); tx.objectStore("feed_diagnostic_warning_events").put(review); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
+    const animal = { id: "cow-a", farmId, animalCode: "TEST-COW-A", type: "dairy_cow", breed: "SYNTHETIC", status: "active" };
+    const requirement = { id: "requirement-cow-a", farmId, animalId: "cow-a", profileId: "requirement-profile", profileVersion: 1,
+      sourceTitle: "TEST requirement profile", sourceCitation: "TEST-REQUIREMENT-UI", classificationId: "classification-cow-a",
+      calculatedAt: "2026-10-07T00:30:00Z", inputs: { LIVE_WEIGHT_KG: 500 }, outputs: [
+        { outputCode: "DMI_KG_DAY", outputUnit: "kg DM/day", value: 6 },
+        { outputCode: "ME_MJ_DAY", outputUnit: "MJ ME/day", value: 65 },
+        { outputCode: "CP_KG_DAY", outputUnit: "kg CP/day", value: 0.9 }
+      ] };
+    try { await new Promise((resolve, reject) => { const tx = db.transaction(["feed_diagnostic_warning_events", "animals", "nutrition_requirement_calculations"], "readwrite");
+      tx.objectStore("feed_diagnostic_warning_events").put(review); tx.objectStore("animals").put(animal);
+      tx.objectStore("nutrition_requirement_calculations").put(requirement); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator("#ration-allocation-form:visible").waitFor(); await page.locator("#ration-allocation-review").selectOption("group-ration-ui");
   await page.locator('[data-allocation-animal="cow-a"][data-allocation-feed="silage"]').fill("12");
@@ -51,6 +61,13 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
   await page.locator('#ration-allocation-list:has-text("Synthetic documented weighing evidence")').waitFor();
   assert.equal((await rows(page, "feed_ration_allocation_reviews")).length, 1); assert.equal((await rows(page, "records")).length, 0);
   assert.equal((await rows(page, "sync_queue")).length, 0); assert.equal((await rows(page, "feed_inventory_movements")).length, 0);
+  await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="cow-a"]').click();
+  await page.locator("#requirement-ration-comparison-form:visible").waitFor();
+  await page.locator("#requirement-ration-calculation").selectOption("requirement-cow-a");
+  await page.locator("#requirement-ration-review").selectOption({ index: 1 });
+  await page.locator('#requirement-ration-comparison-form button[type="submit"]').click();
+  await page.locator('#requirement-ration-comparison-result:has-text("allocation review")').waitFor();
+  assert.match(await page.locator("#requirement-ration-comparison-result").textContent(), /ration evidence: 5.85 kg DM\/day/);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('#ration-allocation-list:has-text("Synthetic documented weighing evidence")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor();
