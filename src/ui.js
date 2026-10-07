@@ -2,7 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-03";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261007-04";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
@@ -22,6 +22,7 @@ let activeUserId = null;
 let comparisonRequirementCalculations = [];
 let comparisonRationReviews = [];
 let currentComparisonEvidence = null;
+let allocationRationReviews = [];
 
 function clearFarmView() {
   feedRefreshGeneration += 1;
@@ -31,7 +32,7 @@ function clearFarmView() {
     "#diagnostic-selection-form", "#diagnostic-archive-form", "#animal-nutrition-classification-form",
     "#animal-nutrition-review-form", "#requirement-profile-form", "#requirement-approval-form",
     "#requirement-revocation-form", "#requirement-applicability-form", "#requirement-calculation-form",
-    "#requirement-ration-comparison-form", "#requirement-ration-review-form"].forEach((selector) => {
+    "#requirement-ration-comparison-form", "#requirement-ration-review-form", "#ration-allocation-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
@@ -68,6 +69,7 @@ function clearFarmView() {
   comparisonRequirementCalculations = [];
   comparisonRationReviews = [];
   currentComparisonEvidence = null;
+  allocationRationReviews = [];
   ["#profile-name", "#profile-type", "#profile-breed", "#profile-status", "#profile-source", "#profile-birth"].forEach((selector) => {
     $(selector).textContent = "";
   });
@@ -94,7 +96,8 @@ function clearFarmView() {
   ["#feed-list", "#feed-source-list", "#feed-profile", "#feed-conflicts", "#feed-cost-source-list", "#feed-inventory-list",
     "#feed-movement-list", "#feed-current-selections", "#ration-review-rows", "#ration-review-result",
     "#diagnostic-profile-list", "#diagnostic-current-selection", "#diagnostic-history-list",
-    "#requirement-profile-list", "#requirement-review-list"].forEach((selector) => $(selector).replaceChildren());
+    "#requirement-profile-list", "#requirement-review-list", "#ration-allocation-rows",
+    "#ration-allocation-list"].forEach((selector) => $(selector).replaceChildren());
   selectedDiagnosticProfile = null;
   $("#diagnostic-profile-count").textContent = "0 profiles";
   $("#diagnostic-profile-empty").hidden = false;
@@ -126,6 +129,10 @@ function clearFarmView() {
   $("#feed-selection-form").hidden = true;
   $("#ration-review-empty").hidden = false;
   $("#ration-review-calculate").disabled = true;
+  $("#ration-allocation-form").hidden = true;
+  $("#ration-allocation-review").replaceChildren();
+  $("#ration-allocation-count").textContent = "0 reviews";
+  $("#ration-allocation-empty").hidden = false;
   $("#feed-profile-empty").hidden = false;
   $("#feed-profile-empty").textContent = "Choose a feed from the farm library to review its observations.";
   $("#feed-profile-title").textContent = "Select a feed";
@@ -277,6 +284,47 @@ function renderDiagnosticHistory(history) {
     ' · ' + escapeHtml(row.animalClass.replaceAll("_", " ")) + '</small><small>Group: ' +
     escapeHtml(row.animalGroup.map((animal) => animal.animalCode).join(", ")) + '</small><small>Findings: ' +
     escapeHtml(row.findingCodes.join(", ")) + '</small><small>Citation: ' + escapeHtml(row.sourceCitation) + '</small></div>').join("");
+}
+
+function renderAllocationInputs() {
+  const review = allocationRationReviews.find((row) => row.id === $("#ration-allocation-review").value);
+  if (!review) { $("#ration-allocation-rows").replaceChildren(); return; }
+  $("#ration-allocation-rows").innerHTML = review.animalGroup.map((animal) => '<div class="evidence-row"><strong>' +
+    escapeHtml(animal.animalCode || animal.id) + '</strong>' + review.ration.ingredients.map((ingredient) =>
+      '<label class="field"><span>' + escapeHtml(ingredient.feedName) + ' (kg as fed)</span><input type="number" min="0" step="0.001" required data-allocation-animal="' +
+      escapeHtml(animal.id) + '" data-allocation-feed="' + escapeHtml(ingredient.feedId) + '"></label>').join("") + '</div>').join("");
+}
+
+function renderRationAllocationEvidence(history, reviews) {
+  allocationRationReviews = history.filter((row) => row.animalGroup?.length > 1 && row.ration?.ingredients?.length);
+  $("#ration-allocation-form").hidden = allocationRationReviews.length === 0;
+  $("#ration-allocation-review").replaceChildren(new Option("Choose group ration review", ""), ...allocationRationReviews.map((row) =>
+    new Option(row.calculatedAt + " · " + row.animalGroup.map((animal) => animal.animalCode || animal.id).join(", "), row.id)));
+  $("#ration-allocation-rows").replaceChildren();
+  $("#ration-allocation-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
+  $("#ration-allocation-empty").hidden = allocationRationReviews.length > 0 || reviews.length > 0;
+  $("#ration-allocation-list").innerHTML = reviews.map((review) => '<div class="evidence-row"><strong>' +
+    escapeHtml(review.allocationMethod.replaceAll("_", " ")) + '</strong><small>' + escapeHtml(review.reviewedAt) +
+    ' · ' + escapeHtml(review.allocations.length + " animals") + '</small><small>' + escapeHtml(review.rationale) +
+    '</small><small>' + escapeHtml(review.allocations.map((row) => row.animalId + ": " + row.ration.totalAsFedKg + " kg as fed").join(" · ")) + '</small></div>').join("");
+}
+
+async function handleRationAllocationSubmit(event) {
+  event.preventDefault(); const generation = accessGeneration; const form = event.currentTarget;
+  try {
+    const rationReviewId = $("#ration-allocation-review").value;
+    const review = allocationRationReviews.find((row) => row.id === rationReviewId);
+    if (!review) throw new Error("Choose a compatible group ration review.");
+    const allocations = review.animalGroup.map((animal) => ({ animalId: animal.id,
+      ingredients: review.ration.ingredients.map((ingredient) => ({ feedId: ingredient.feedId,
+        asFedKg: Number(document.querySelector('[data-allocation-animal="' + CSS.escape(animal.id) + '"][data-allocation-feed="' + CSS.escape(ingredient.feedId) + '"]').value) })) }));
+    await FarmRepository.recordRationAllocationEvidence(rationReviewId, { allocationMethod: "DOCUMENTED_INGREDIENT_WEIGHTS",
+      rationale: $("#ration-allocation-rationale").value, reviewerUserId: activeUserId,
+      reviewerConfirmed: $("#ration-allocation-confirmed").checked, allocations });
+    if (!canShowFarmData(generation)) return;
+    form.reset(); $("#ration-allocation-rows").replaceChildren(); await refreshFeedWorkspace(generation);
+    if (canShowFarmData(generation)) setStatus("Per-animal ration allocation evidence recorded.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
 function renderDiagnosticProfiles(profiles, selected, animals, history) {
@@ -449,11 +497,11 @@ async function renderNutritionProfile(feedId, generation = accessGeneration) {
 async function refreshFeedWorkspace(generation = accessGeneration) {
   const refreshGeneration = ++feedRefreshGeneration;
   if (!canShowFarmData(generation)) return;
-  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, animals,
+  const [feeds, sources, costSources, batches, diagnosticProfiles, diagnosticSelection, diagnosticHistory, allocationHistory, animals,
     requirementProfiles, requirementReviews] = await Promise.all([FarmRepository.listFeeds(),
     FarmRepository.listNutritionSources(), FarmRepository.listFeedCostSources(), FarmRepository.listFeedInventoryBatches(),
     FarmRepository.listDiagnosticProfiles({ includeArchived: true }), FarmRepository.getSelectedDiagnosticProfile(),
-    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listAnimals(),
+    FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listRationAllocationEvidence(), FarmRepository.listAnimals(),
     FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }), FarmRepository.listNutritionRequirementProfileReviews()]);
   if (!canShowFarmData(generation) || refreshGeneration !== feedRefreshGeneration) return;
   const selectionRows = await Promise.all(feeds.map(async (feed) => [feed.id, await FarmRepository.getNutritionSelections(feed.id)]));
@@ -498,6 +546,7 @@ async function refreshFeedWorkspace(generation = accessGeneration) {
   renderRationReview(batches, selectionsByFeed);
   renderDiagnosticProfiles(diagnosticProfiles, diagnosticSelection,
     animals.filter((animal) => ["active", "dry"].includes(animal.status)), diagnosticHistory);
+  renderRationAllocationEvidence(diagnosticHistory, allocationHistory);
   renderRequirementProfiles(requirementProfiles, requirementReviews);
   if (!feeds.some((feed) => feed.id === selectedFeedId)) selectedFeedId = feeds[0]?.id || null;
   if (selectedFeedId) $("#feed-observation-feed").value = selectedFeedId;
@@ -1415,6 +1464,8 @@ export async function initApp() {
   $("#feed-movement-form").addEventListener("submit", handleFeedMovementSubmit);
   $("#feed-selection-form").addEventListener("submit", handleFeedSelectionSubmit);
   $("#ration-review-form").addEventListener("submit", handleRationReview);
+  $("#ration-allocation-form").addEventListener("submit", handleRationAllocationSubmit);
+  $("#ration-allocation-review").addEventListener("change", renderAllocationInputs);
   $("#diagnostic-profile-form").addEventListener("submit", handleDiagnosticProfileSubmit);
   $("#diagnostic-selection-form").addEventListener("submit", handleDiagnosticSelectionSubmit);
   $("#diagnostic-archive-form").addEventListener("submit", handleDiagnosticArchiveSubmit);
