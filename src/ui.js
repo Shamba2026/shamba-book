@@ -8,6 +8,7 @@ import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=2026
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
 import { classifyComparisonReviewHistory, compareRequirementToRationEvidence, latestComparisonReviewForEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-08";
 import { assessComparisonEvidenceCurrency } from "./domain/feed/comparison-evidence-currency.js?build=20261007-06";
+import { buildNutritionEvidenceStatus } from "./domain/feed/nutrition-evidence-status.js?build=20261007-09";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
@@ -47,6 +48,8 @@ function clearFarmView() {
   $("#classification-list").replaceChildren();
   $("#classification-count").textContent = "0 observations";
   $("#classification-empty").hidden = false;
+  const nutritionStatus = $("#nutrition-evidence-status");
+  if (nutritionStatus) nutritionStatus.replaceChildren();
   $("#classification-review-list").replaceChildren();
   $("#classification-review-count").textContent = "0 reviews";
   $("#classification-review-empty").hidden = false;
@@ -717,6 +720,18 @@ function renderAnimalNutritionClassifications(rows) {
     '</span><small>Evidence observation only; no automated applicability or recommendation.</small></div>').join("");
 }
 
+function renderNutritionEvidenceStatus(input) {
+  const labels = { CLASSIFICATION: "Classification", CLASSIFICATION_REVIEW: "Classification review",
+    REQUIREMENT_CALCULATION: "Requirement calculation", RATION_EVIDENCE: "Ration evidence",
+    COMPARISON_REVIEW: "Comparison review" };
+  const result = buildNutritionEvidenceStatus(input);
+  $("#nutrition-evidence-status").innerHTML = '<div class="section-head"><h3>Nutrition evidence status</h3><span class="chip">Read only</span></div>' +
+    '<p class="muted">Evidence completeness only. This does not approve a ration, recommend feed or consume inventory.</p><div class="feed-list">' +
+    result.stages.map((row) => '<div class="evidence-row"><strong>' + escapeHtml(labels[row.code] + " · " + labelEnum(row.state)) +
+      '</strong><span>' + escapeHtml(row.detail) + '</span>' + (row.evidenceId ? '<small>Evidence ID: ' + escapeHtml(row.evidenceId) + '</small>' : '') +
+      '</div>').join("") + '</div>';
+}
+
 function renderAnimalNutritionReviews(classifications, reviews, profiles) {
   $("#animal-nutrition-review-form").hidden = classifications.length === 0;
   $("#classification-review-version").replaceChildren(...classifications.map((row) =>
@@ -915,6 +930,8 @@ async function openAnimal(animalId) {
   renderRequirementRationComparisonOptions(animalId, requirementCalculations, rationReviews, allocationReviews,
     requirementProfiles, classifications, currentDiagnostic);
   renderRequirementRationReviews(comparisonReviews);
+  renderNutritionEvidenceStatus({ animalId, classifications, classificationReviews: reviews,
+    requirementCalculations, rationReviews, allocationReviews, comparisonReviews, selectedDiagnostic: currentDiagnostic });
 }
 
 async function handleAnimalNutritionClassificationSubmit(event) {
@@ -1477,6 +1494,12 @@ export async function initApp() {
     summary.id = "requirement-ration-review-current-summary";
     summary.className = "muted";
     $("#requirement-ration-review-list").before(summary);
+  }
+  if (!$("#nutrition-evidence-status")) {
+    const status = document.createElement("section");
+    status.id = "nutrition-evidence-status";
+    status.className = "card";
+    $("#classification-list").before(status);
   }
   showView("home");
   $("#milk-date").value = toLocalDateString();
