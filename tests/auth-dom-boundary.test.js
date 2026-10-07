@@ -84,7 +84,8 @@ const context = vm.createContext({
     listNutritionRequirementCalculations: async () => [],
     listDiagnosticWarningHistory: async () => [],
     listRationAllocationEvidence: async () => [],
-    listRequirementRationComparisonReviews: async () => []
+    listRequirementRationComparisonReviews: async () => [],
+    getSelectedDiagnosticProfile: async () => null
   },
   getAuthClient: async () => client,
   startSyncLoop(callback) { syncCallback = callback; },
