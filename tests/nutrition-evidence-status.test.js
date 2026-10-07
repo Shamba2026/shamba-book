@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { buildNutritionEvidenceStatus } from "../src/domain/feed/nutrition-evidence-status.js";
+import { buildNutritionEvidenceStatus, summarizeHerdNutritionEvidence } from "../src/domain/feed/nutrition-evidence-status.js";
 
 const base = {
   animalId: "cow-1",
   classifications: [{ id: "class-2", version: 2, createdAt: "2026-10-07T10:00:00Z" }],
   classificationReviews: [{ id: "class-review", classificationId: "class-2", evidenceDecision: "CONFIRMED",
     reviewerConfirmed: true, reviewedAt: "2026-10-07T10:10:00Z" }],
-  requirementCalculations: [{ id: "requirement-2", classificationId: "class-2" }],
+  requirementProfiles: [{ id: "requirement-profile-1", status: "approved" }],
+  requirementCalculations: [{ id: "requirement-2", profileId: "requirement-profile-1", classificationId: "class-2",
+    calculatedAt: "2026-10-07T10:15:00Z" }],
   rationReviews: [{ id: "ration-2", profileId: "profile-1", profileVersion: 1, selectionId: "selection-1",
     rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true, animalGroup: [{ id: "cow-1" }] }],
   allocationReviews: [],
@@ -31,7 +33,23 @@ const groupWithoutAllocation = buildNutritionEvidenceStatus({ ...base, rationRev
 assert.equal(groupWithoutAllocation.stages[3].state, "MISSING");
 assert.equal(groupWithoutAllocation.stages[4].state, "REVIEW_REQUIRED");
 
+const revokedRequirement = buildNutritionEvidenceStatus({ ...base,
+  requirementProfiles: [{ id: "requirement-profile-1", status: "revoked" }] });
+assert.equal(revokedRequirement.stages[2].state, "STALE");
+assert.equal(revokedRequirement.stages[4].state, "REVIEW_REQUIRED");
+
 const empty = buildNutritionEvidenceStatus({ animalId: "cow-1" });
 assert.deepEqual(empty.stages.map((row) => row.state), ["MISSING", "BLOCKED", "MISSING", "MISSING", "REVIEW_REQUIRED"]);
+
+const herd = summarizeHerdNutritionEvidence([
+  { animalId: "cow-1", animalCode: "COW-1", stages: status.stages },
+  { animalId: "cow-2", animalCode: "COW-2", stages: stale.stages }
+]);
+assert.deepEqual({ totalAnimals: herd.totalAnimals, completeAnimals: herd.completeAnimals,
+  attentionAnimals: herd.attentionAnimals }, { totalAnimals: 2, completeAnimals: 1, attentionAnimals: 1 });
+assert.equal(herd.animals[0].evidenceComplete, true);
+assert.deepEqual(herd.animals[1].outstanding.map((row) => row.code),
+  ["CLASSIFICATION_REVIEW", "REQUIREMENT_CALCULATION", "COMPARISON_REVIEW"]);
+assert.equal(Object.isFrozen(herd.animals), true);
 
 console.log("nutrition-evidence-status.test.js: PASS");

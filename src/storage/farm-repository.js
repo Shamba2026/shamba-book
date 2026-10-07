@@ -12,6 +12,8 @@ import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence, 
   "../domain/feed/requirement-ration-comparison.js?build=20261007-08";
 import { requireCurrentComparisonEvidence } from "../domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { validateRationAllocationEvidence } from "../domain/feed/ration-allocation.js?build=20261007-03";
+import { buildNutritionEvidenceStatus, summarizeHerdNutritionEvidence } from
+  "../domain/feed/nutrition-evidence-status.js?build=20261007-10";
 
 let activeFarmId = null;
 
@@ -137,6 +139,28 @@ export async function saveAnimal(animal, photoBlob) {
 export async function listAnimals() {
   const animals = farmRows(await getAll("animals"));
   return animals.sort((a, b) => a.animalCode.localeCompare(b.animalCode));
+}
+
+export async function getHerdNutritionEvidenceReadiness() {
+  const farmId = requireFarm();
+  const [animals, classifications, classificationReviews, requirementProfiles, requirementCalculations, rationReviews,
+    allocationReviews, comparisonReviews, selectedDiagnostic] = await Promise.all([
+    getAll("animals"), getAll("animal_nutrition_classifications"), getAll("animal_nutrition_classification_reviews"),
+    getAll("nutrition_requirement_profiles"), getAll("nutrition_requirement_calculations"), getAll("feed_diagnostic_warning_events"),
+    getAll("feed_ration_allocation_reviews"), getAll("nutrition_requirement_ration_reviews"), getSelectedDiagnosticProfile()
+  ]);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during nutrition evidence read.");
+  const scoped = (rows) => rows.filter((row) => row.farmId === farmId);
+  const eligibleAnimals = scoped(animals).filter((animal) => ["active", "dry"].includes(animal.status))
+    .sort((a, b) => a.animalCode.localeCompare(b.animalCode));
+  return summarizeHerdNutritionEvidence(eligibleAnimals.map((animal) => ({ animalId: animal.id, animalCode: animal.animalCode,
+    stages: buildNutritionEvidenceStatus({ animalId: animal.id,
+      classifications: scoped(classifications).filter((row) => row.animalId === animal.id),
+      classificationReviews: scoped(classificationReviews).filter((row) => row.animalId === animal.id),
+      requirementProfiles: scoped(requirementProfiles),
+      requirementCalculations: scoped(requirementCalculations).filter((row) => row.animalId === animal.id),
+      rationReviews: scoped(rationReviews), allocationReviews: scoped(allocationReviews),
+      comparisonReviews: scoped(comparisonReviews).filter((row) => row.animalId === animal.id), selectedDiagnostic }).stages })));
 }
 
 export async function getAnimal(animalId) {

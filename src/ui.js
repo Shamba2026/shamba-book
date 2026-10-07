@@ -2,13 +2,13 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-08";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261007-10";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
 import { classifyComparisonReviewHistory, compareRequirementToRationEvidence, latestComparisonReviewForEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-08";
 import { assessComparisonEvidenceCurrency } from "./domain/feed/comparison-evidence-currency.js?build=20261007-06";
-import { buildNutritionEvidenceStatus } from "./domain/feed/nutrition-evidence-status.js?build=20261007-09";
+import { buildNutritionEvidenceStatus } from "./domain/feed/nutrition-evidence-status.js?build=20261007-10";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
@@ -43,6 +43,8 @@ function clearFarmView() {
   $("#milk-checklist-summary").textContent = "";
   $("#animal-list").replaceChildren();
   $("#animals-empty").hidden = false;
+  const herdNutrition = $("#herd-nutrition-readiness");
+  if (herdNutrition) herdNutrition.replaceChildren();
   $("#animal-profile").hidden = true;
   selectedAnimalId = null;
   $("#classification-list").replaceChildren();
@@ -703,6 +705,21 @@ function refreshAnimalList(animals) {
   $("#animal-list").innerHTML = animals.map(animalCard).join("");
 }
 
+function renderHerdNutritionReadiness(summary) {
+  const labels = { CLASSIFICATION: "classification", CLASSIFICATION_REVIEW: "classification review",
+    REQUIREMENT_CALCULATION: "requirement calculation", RATION_EVIDENCE: "ration evidence",
+    COMPARISON_REVIEW: "comparison review" };
+  $("#herd-nutrition-readiness").innerHTML = '<div class="section-head"><h3>Nutrition evidence readiness</h3><span class="chip">Read only</span></div>' +
+    '<p><strong>' + escapeHtml(summary.completeAnimals + " of " + summary.totalAnimals) +
+    '</strong> eligible animals have a complete current evidence chain.</p>' +
+    (summary.animals.length ? '<div class="feed-list">' + summary.animals.map((row) => '<div class="evidence-row"><strong>' +
+      escapeHtml(row.animalCode + " · " + (row.evidenceComplete ? "EVIDENCE COMPLETE" : "ATTENTION")) + '</strong><span>' +
+      escapeHtml(row.evidenceComplete ? "All controlled evidence stages are current." : "Outstanding: " + row.outstanding.map((item) =>
+        labels[item.code] + " (" + labelEnum(item.state) + ")").join("; ")) +
+      '</span></div>').join("") + '</div>' : '<p class="muted">No active or dry animals require nutrition evidence review.</p>') +
+    '<p class="muted">Workflow evidence only; this is not a biological adequacy judgment or ration recommendation.</p>';
+}
+
 function labelEnum(value) {
   return String(value || "").toLocaleLowerCase().replaceAll("_", " ");
 }
@@ -931,7 +948,7 @@ async function openAnimal(animalId) {
     requirementProfiles, classifications, currentDiagnostic);
   renderRequirementRationReviews(comparisonReviews);
   renderNutritionEvidenceStatus({ animalId, classifications, classificationReviews: reviews,
-    requirementCalculations, rationReviews, allocationReviews, comparisonReviews, selectedDiagnostic: currentDiagnostic });
+    requirementProfiles, requirementCalculations, rationReviews, allocationReviews, comparisonReviews, selectedDiagnostic: currentDiagnostic });
 }
 
 async function handleAnimalNutritionClassificationSubmit(event) {
@@ -1102,10 +1119,13 @@ async function handleFinanceSubmit(event) {
 
 async function refreshAnimalData(generation = accessGeneration) {
   if (!canShowFarmData(generation)) return;
-  const animals = await FarmRepository.listAnimals();
+  const [animals, nutritionReadiness] = await Promise.all([
+    FarmRepository.listAnimals(), FarmRepository.getHerdNutritionEvidenceReadiness()
+  ]);
   if (!canShowFarmData(generation)) return;
   populateAnimalSelectors(animals);
   refreshAnimalList(animals);
+  renderHerdNutritionReadiness(nutritionReadiness);
   await refreshMilkChecklist(generation);
 }
 
@@ -1500,6 +1520,12 @@ export async function initApp() {
     status.id = "nutrition-evidence-status";
     status.className = "card";
     $("#classification-list").before(status);
+  }
+  if (!$("#herd-nutrition-readiness")) {
+    const readiness = document.createElement("section");
+    readiness.id = "herd-nutrition-readiness";
+    readiness.className = "evidence-review";
+    $("#animal-list").before(readiness);
   }
   showView("home");
   $("#milk-date").value = toLocalDateString();
