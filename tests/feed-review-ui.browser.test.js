@@ -214,6 +214,7 @@ try {
   await page.locator('#requirement-profile-list:has-text("status: revoked")').waitFor();
   await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
   await page.locator("#animal-profile:visible").waitFor();
+  await page.locator("#requirement-ration-comparison-form").waitFor({ state: "hidden" });
   assert.equal(await page.locator("#requirement-ration-comparison-form").isVisible(), false,
     "revoked requirement evidence must not remain available for a new comparison review");
   assert.equal(await page.locator("#requirement-calculation-form").isVisible(), false, "revoked profile must not remain calculable");
