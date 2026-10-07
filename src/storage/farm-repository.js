@@ -9,7 +9,7 @@ import { currentDiagnosticApplicabilityEvidence, validateAnimalNutritionClassifi
 import { calculateRequirements, validateRequirementApplicability, validateRequirementApproval,
   validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
 import { compareRequirementToRationEvidence, validateComparisonReview } from
-  "../domain/feed/requirement-ration-comparison.js?build=20261007-01";
+  "../domain/feed/requirement-ration-comparison.js?build=20261007-04";
 import { validateRationAllocationEvidence } from "../domain/feed/ration-allocation.js?build=20261007-03";
 
 let activeFarmId = null;
@@ -329,17 +329,23 @@ export async function listNutritionRequirementCalculations(animalId = null) {
 
 export async function reviewRequirementRationComparison(requirementCalculationId, rationReviewId, input) {
   const farmId = requireFarm();
-  const [requirement, rationReview] = await Promise.all([
-    get("nutrition_requirement_calculations", requirementCalculationId), get("feed_diagnostic_warning_events", rationReviewId)
+  const allocationReviewId = String(input?.allocationReviewId || "").trim();
+  const [requirement, rationReview, allocationReview] = await Promise.all([
+    get("nutrition_requirement_calculations", requirementCalculationId), get("feed_diagnostic_warning_events", rationReviewId),
+    allocationReviewId ? get("feed_ration_allocation_reviews", allocationReviewId) : null
   ]);
   if (requireFarm() !== farmId) throw new Error("Farm session changed during review.");
   if (!requirement || requirement.farmId !== farmId || !rationReview || rationReview.farmId !== farmId) {
     throw new Error("Comparison evidence is not available in the active farm.");
   }
-  const report = compareRequirementToRationEvidence(requirement, rationReview, requirement.animalId);
+  if (allocationReviewId && (!allocationReview || allocationReview.farmId !== farmId)) {
+    throw new Error("Allocation evidence is not available in the active farm.");
+  }
+  const report = compareRequirementToRationEvidence(requirement, rationReview, requirement.animalId, allocationReview);
   const review = validateComparisonReview(input);
   const event = Object.freeze({ id: newId(), farmId, animalId: requirement.animalId,
     requirementCalculationId: requirement.id, rationReviewId: rationReview.id,
+    allocationReviewId: report.attribution.allocation?.allocationReviewId || null,
     report: structuredClone(report), ...review, reviewedAt: now() });
   await putAtomically([{ storeName: "nutrition_requirement_ration_reviews", value: event }]);
   return event;

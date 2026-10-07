@@ -31,7 +31,7 @@ export function validateComparisonReview(input) {
   return Object.freeze({ decision: input.decision, rationale, reviewerUserId });
 }
 
-export function compareRequirementToRationEvidence(requirement, rationReview, animalId) {
+export function compareRequirementToRationEvidence(requirement, rationReview, animalId, allocationEvidence = null) {
   const targetAnimalId = requiredText(animalId, "Animal ID");
   if (!requirement || !rationReview) throw new Error("Requirement and ration evidence are required.");
   if (requiredText(requirement.farmId, "Requirement farm") !== requiredText(rationReview.farmId, "Ration farm")) {
@@ -41,11 +41,24 @@ export function compareRequirementToRationEvidence(requirement, rationReview, an
   if (!rationReview.animalGroup?.some((animal) => animal.id === targetAnimalId)) {
     throw new Error("The selected animal is not in the ration review animal group.");
   }
-  if (rationReview.animalGroup.length !== 1) {
-    throw new Error("Ration evidence must represent a single animal until per-animal group allocation is documented.");
-  }
   if (rationReview.rationBasis !== "DAILY_OFFERED_RATION" || rationReview.rationBasisConfirmed !== true) {
     throw new Error("Ration evidence must explicitly confirm a daily offered ration basis.");
+  }
+  let ration = rationReview.ration; let allocationAttribution = null;
+  if (rationReview.animalGroup.length !== 1) {
+    if (!allocationEvidence) throw new Error("A reviewed per-animal allocation is required for group ration evidence.");
+    if (requiredText(allocationEvidence.farmId, "Allocation farm") !== requirement.farmId ||
+        requiredText(allocationEvidence.rationReviewId, "Allocated ration review ID") !== rationReview.id) {
+      throw new Error("Allocation evidence must belong to the same farm and ration review.");
+    }
+    if (allocationEvidence.allocationMethod !== "DOCUMENTED_INGREDIENT_WEIGHTS" || allocationEvidence.reviewerConfirmed !== true) {
+      throw new Error("Allocation evidence must contain confirmed documented ingredient weights.");
+    }
+    const animalAllocation = allocationEvidence.allocations?.find((row) => row.animalId === targetAnimalId);
+    if (!animalAllocation?.ration) throw new Error("Allocation evidence does not contain the selected animal.");
+    ration = animalAllocation.ration;
+    allocationAttribution = Object.freeze({ allocationReviewId: requiredText(allocationEvidence.id, "Allocation review ID"),
+      allocationMethod: allocationEvidence.allocationMethod, allocationReviewedAt: allocationEvidence.reviewedAt });
   }
 
   const comparisons = []; const uncompared = [];
@@ -58,7 +71,7 @@ export function compareRequirementToRationEvidence(requirement, rationReview, an
     }
     if (output.outputUnit !== definition.unit) throw new Error(output.outputCode + " has an incompatible unit.");
     const requiredValue = finite(output.value, output.outputCode + " requirement");
-    const suppliedValue = finite(definition.supply(rationReview.ration || {}), output.outputCode + " ration evidence");
+    const suppliedValue = finite(definition.supply(ration || {}), output.outputCode + " ration evidence");
     const gap = rounded(suppliedValue - requiredValue);
     comparisons.push(Object.freeze({ outputCode: output.outputCode, outputUnit: definition.unit,
       requiredValue, suppliedValue: rounded(suppliedValue), gap,
@@ -74,5 +87,6 @@ export function compareRequirementToRationEvidence(requirement, rationReview, an
       classificationId: requiredText(requirement.classificationId, "Classification ID"), requirementCalculatedAt: requirement.calculatedAt,
       rationReviewId: requiredText(rationReview.id, "Ration review ID"), rationProfileId: requiredText(rationReview.profileId, "Ration profile ID"),
       rationProfileVersion: rationReview.profileVersion, rationSourceCitation: requiredText(rationReview.sourceCitation, "Ration citation"),
-      rationSelectionId: requiredText(rationReview.selectionId, "Ration selection ID"), rationCalculatedAt: rationReview.calculatedAt }) });
+      rationSelectionId: requiredText(rationReview.selectionId, "Ration selection ID"), rationCalculatedAt: rationReview.calculatedAt,
+      allocation: allocationAttribution }) });
 }

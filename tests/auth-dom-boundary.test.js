@@ -83,6 +83,7 @@ const context = vm.createContext({
     listNutritionRequirementApplicabilityReviews: async () => [],
     listNutritionRequirementCalculations: async () => [],
     listDiagnosticWarningHistory: async () => [],
+    listRationAllocationEvidence: async () => [],
     listRequirementRationComparisonReviews: async () => []
   },
   getAuthClient: async () => client,
