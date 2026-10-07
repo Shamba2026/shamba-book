@@ -40,6 +40,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
         { feedId: "meal", feedName: "Synthetic meal", role: "concentrate", asFedKg: 4, dmKg: 3.6, meMJ: 39.6, cpKg: 0.72, costCents: 800 }
       ] }, findingCodes: ["NO_CONFIGURED_THRESHOLD_TRIGGERED"] };
     const animal = { id: "cow-a", farmId, animalCode: "TEST-COW-A", type: "dairy_cow", breed: "SYNTHETIC", status: "active" };
+    const animalB = { id: "cow-b", farmId, animalCode: "TEST-COW-B", type: "dairy_cow", breed: "SYNTHETIC", status: "active" };
     const requirement = { id: "requirement-cow-a", farmId, animalId: "cow-a", profileId: "requirement-profile", profileVersion: 1,
       sourceTitle: "TEST requirement profile", sourceCitation: "TEST-REQUIREMENT-UI", classificationId: "classification-cow-a",
       calculatedAt: "2026-10-07T00:30:00Z", inputs: { LIVE_WEIGHT_KG: 500 }, outputs: [
@@ -47,9 +48,26 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
         { outputCode: "ME_MJ_DAY", outputUnit: "MJ ME/day", value: 65 },
         { outputCode: "CP_KG_DAY", outputUnit: "kg CP/day", value: 0.9 }
       ] };
-    try { await new Promise((resolve, reject) => { const tx = db.transaction(["feed_diagnostic_warning_events", "animals", "nutrition_requirement_calculations"], "readwrite");
-      tx.objectStore("feed_diagnostic_warning_events").put(review); tx.objectStore("animals").put(animal);
-      tx.objectStore("nutrition_requirement_calculations").put(requirement); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
+    const classifications = [{ id: "classification-cow-a", farmId, animalId: "cow-a", version: 1, createdAt: "2026-10-06T22:00:00Z" },
+      { id: "classification-cow-b", farmId, animalId: "cow-b", version: 1, createdAt: "2026-10-06T22:00:00Z" }];
+    const classificationReviews = classifications.map((row) => ({ id: "review-" + row.animalId, farmId, animalId: row.animalId,
+      classificationId: row.id, profileId: "profile-ui", evidenceDecision: "CONFIRMED", applicabilityDecision: "APPLICABLE",
+      reviewerConfirmed: true, reviewerUserId: "allocation-reviewer", reviewedAt: "2026-10-06T22:30:00Z" }));
+    const diagnosticProfile = { id: "profile-ui", farmId, version: 1, animalClass: "LACTATING_DAIRY_COW", status: "active" };
+    const diagnosticSelection = { id: "selection-ui", farmId, profileId: "profile-ui", applicabilityConfirmed: true,
+      selectedAt: "2026-10-06T23:00:00Z", animalGroup: [{ id: "cow-a" }, { id: "cow-b" }],
+      classificationEvidence: classifications.map((row) => ({ animalId: row.animalId, classificationId: row.id,
+        reviewId: "review-" + row.animalId })) };
+    const requirementProfile = { id: "requirement-profile", farmId, version: 1, status: "approved" };
+    const stores = ["feed_diagnostic_warning_events", "animals", "nutrition_requirement_calculations",
+      "animal_nutrition_classifications", "animal_nutrition_classification_reviews", "feed_diagnostic_profiles",
+      "feed_diagnostic_profile_selections", "nutrition_requirement_profiles"];
+    try { await new Promise((resolve, reject) => { const tx = db.transaction(stores, "readwrite");
+      tx.objectStore("feed_diagnostic_warning_events").put(review); tx.objectStore("animals").put(animal); tx.objectStore("animals").put(animalB);
+      tx.objectStore("nutrition_requirement_calculations").put(requirement); classifications.forEach((row) => tx.objectStore("animal_nutrition_classifications").put(row));
+      classificationReviews.forEach((row) => tx.objectStore("animal_nutrition_classification_reviews").put(row));
+      tx.objectStore("feed_diagnostic_profiles").put(diagnosticProfile); tx.objectStore("feed_diagnostic_profile_selections").put(diagnosticSelection);
+      tx.objectStore("nutrition_requirement_profiles").put(requirementProfile); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator("#ration-allocation-form:visible").waitFor(); await page.locator("#ration-allocation-review").selectOption("group-ration-ui");
   await page.locator('[data-allocation-animal="cow-a"][data-allocation-feed="silage"]').fill("12");
