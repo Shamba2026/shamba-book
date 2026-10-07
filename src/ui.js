@@ -2,11 +2,11 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-07";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261007-08";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
-import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-07";
+import { classifyComparisonReviewHistory, compareRequirementToRationEvidence, latestComparisonReviewForEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-08";
 import { assessComparisonEvidenceCurrency } from "./domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
@@ -68,6 +68,8 @@ function clearFarmView() {
   $("#requirement-ration-review-list").replaceChildren();
   $("#requirement-ration-review-count").textContent = "0 reviews";
   $("#requirement-ration-review-empty").hidden = false;
+  const currentSummary = $("#requirement-ration-review-current-summary");
+  if (currentSummary) currentSummary.textContent = "";
   comparisonRequirementCalculations = [];
   comparisonRationReviews = [];
   currentComparisonEvidence = null;
@@ -840,12 +842,18 @@ function handleRequirementRationComparison(event) {
 
 function renderRequirementRationReviews(reviews) {
   comparisonReviewHistory = reviews;
+  const classified = classifyComparisonReviewHistory(reviews);
+  const current = classified.filter((row) => row.isCurrent);
   $("#requirement-ration-review-count").textContent = reviews.length + (reviews.length === 1 ? " review" : " reviews");
   $("#requirement-ration-review-empty").hidden = reviews.length > 0;
-  $("#requirement-ration-review-list").innerHTML = reviews.map((row) => '<div class="evidence-row"><strong>' +
-    escapeHtml(labelEnum(row.decision)) + '</strong><span>' + escapeHtml(row.rationale) + '</span><small>Requirement calculation ' +
+  $("#requirement-ration-review-current-summary").textContent = current.length +
+    (current.length === 1 ? " current decision across retained evidence." : " current decisions across retained evidence.");
+  $("#requirement-ration-review-list").innerHTML = classified.map((row) => '<div class="evidence-row"><strong>' +
+    escapeHtml(labelEnum(row.decision)) + ' · ' + (row.isCurrent ? 'CURRENT' : 'SUPERSEDED') + '</strong><span>' +
+    escapeHtml(row.rationale) + '</span><small>Requirement calculation ' +
     escapeHtml(row.requirementCalculationId) + ' · ration review ' + escapeHtml(row.rationReviewId) +
-    (row.supersedesReviewId ? ' · supersedes ' + escapeHtml(row.supersedesReviewId) : '') + '</small><small>' +
+    (row.supersedesReviewId ? ' · supersedes ' + escapeHtml(row.supersedesReviewId) : '') +
+    (row.supersededByReviewId ? ' · superseded by ' + escapeHtml(row.supersededByReviewId) : '') + '</small><small>' +
     escapeHtml(row.reviewedAt) + ' · immutable human review · no ration approval</small></div>').join("");
 }
 
@@ -1463,6 +1471,12 @@ export async function initApp() {
     notice.className = "muted";
     notice.hidden = true;
     $("#requirement-ration-review-form").prepend(notice);
+  }
+  if (!$("#requirement-ration-review-current-summary")) {
+    const summary = document.createElement("p");
+    summary.id = "requirement-ration-review-current-summary";
+    summary.className = "muted";
+    $("#requirement-ration-review-list").before(summary);
   }
   showView("home");
   $("#milk-date").value = toLocalDateString();

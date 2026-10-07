@@ -9,7 +9,7 @@ import { currentDiagnosticApplicabilityEvidence, validateAnimalNutritionClassifi
 import { calculateRequirements, validateRequirementApplicability, validateRequirementApproval,
   validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
 import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence, validateComparisonReview } from
-  "../domain/feed/requirement-ration-comparison.js?build=20261007-07";
+  "../domain/feed/requirement-ration-comparison.js?build=20261007-08";
 import { requireCurrentComparisonEvidence } from "../domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { validateRationAllocationEvidence } from "../domain/feed/ration-allocation.js?build=20261007-03";
 

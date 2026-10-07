@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { compareRequirementToRationEvidence, latestComparisonReviewForEvidence,
+import { classifyComparisonReviewHistory, compareRequirementToRationEvidence, latestComparisonReviewForEvidence,
   validateComparisonReview } from "../src/domain/feed/requirement-ration-comparison.js";
 
 const requirement = Object.freeze({ id: "req-1", farmId: "farm-1", animalId: "animal-1", profileId: "rp-1",
@@ -60,6 +60,20 @@ assert.equal(latestComparisonReviewForEvidence(reviewHistory,
   { requirementCalculationId: "req-1", rationReviewId: "ration-1", allocationReviewId: "allocation-1" }).id, "review-allocation");
 assert.equal(latestComparisonReviewForEvidence(reviewHistory,
   { requirementCalculationId: "req-other", rationReviewId: "ration-1" }), null);
+const classifiedHistory = classifyComparisonReviewHistory([
+  reviewHistory[0], { ...reviewHistory[1], supersedesReviewId: "review-old" }, reviewHistory[2]
+]);
+assert.deepEqual(classifiedHistory.map(({ id, isCurrent, supersededByReviewId }) =>
+  ({ id, isCurrent, supersededByReviewId })), [
+  { id: "review-old", isCurrent: false, supersededByReviewId: "review-latest" },
+  { id: "review-latest", isCurrent: true, supersededByReviewId: null },
+  { id: "review-allocation", isCurrent: true, supersededByReviewId: null }
+]);
+assert.equal(Object.isFrozen(classifiedHistory[0]), true);
+const crossEvidenceHistory = classifyComparisonReviewHistory([reviewHistory[0],
+  { ...reviewHistory[2], supersedesReviewId: "review-old" }]);
+assert.equal(crossEvidenceHistory.find((row) => row.id === "review-old").isCurrent, true,
+  "a cross-evidence supersession link must not retire another evidence decision");
 
 const groupRation = { ...ration, id: "ration-group", animalGroup: [{ id: "animal-1" }, { id: "animal-2" }],
   ration: { ...ration.ration, totalDMIKg: 16 } };

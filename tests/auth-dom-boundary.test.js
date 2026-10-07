@@ -96,6 +96,7 @@ const context = vm.createContext({
   filterFinanceEntries: (entries) => entries,
   summarizeFinanceEntries: () => ({ incomeCents: 0, expenseCents: 0, netCents: 0, categoryTotals: [] }),
   formatFinanceMoney: () => "KSh 0.00",
+  classifyComparisonReviewHistory: (reviews) => reviews.map((row) => ({ ...row, isCurrent: true, supersededByReviewId: null })),
   URL: { createObjectURL: () => "blob:test-photo", revokeObjectURL() {} },
   navigator: { onLine: true },
   console
