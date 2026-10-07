@@ -18,6 +18,23 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
     const localDb = await import("/src/storage/local-db.js?allocation-browser"); const repository = await import("/src/storage/farm-repository.js?allocation-browser");
     await new Promise((resolve, reject) => { const request = indexedDB.deleteDatabase("ngombe-herdbook"); request.onsuccess = resolve; request.onerror = () => reject(request.error); });
     await localDb.put("animals", { id: "preserved", farmId: "farm-a", animalCode: "PRESERVED" });
+    for (const id of ["cow-a", "cow-b"]) {
+      await localDb.put("animals", { id, farmId: "farm-a", animalCode: id.toUpperCase(), type: "dairy_cow", status: "active" });
+      await localDb.put("animal_nutrition_classifications", { id: "classification-" + id, farmId: "farm-a", animalId: id,
+        version: 1, createdAt: "2026-10-07T07:00:00.000Z" });
+      await localDb.put("animal_nutrition_classification_reviews", { id: "classification-review-" + id, farmId: "farm-a",
+        animalId: id, classificationId: "classification-" + id, evidenceDecision: "CONFIRMED", reviewerConfirmed: true,
+        profileId: "diagnostic-profile", applicabilityDecision: "APPLICABLE", reviewerUserId: "reviewer-a",
+        reviewedAt: "2026-10-07T07:10:00.000Z" });
+    }
+    await localDb.put("feed_diagnostic_profiles", { id: "diagnostic-profile", farmId: "farm-a", version: 1,
+      animalClass: "LACTATING_DAIRY_COW", status: "active" });
+    await localDb.put("feed_diagnostic_profile_selections", { id: "diagnostic-selection", farmId: "farm-a",
+      profileId: "diagnostic-profile", applicabilityConfirmed: true, selectedAt: "2026-10-07T07:30:00.000Z",
+      animalGroup: [{ id: "cow-a" }, { id: "cow-b" }], classificationEvidence: [
+        { classificationId: "classification-cow-a", reviewId: "classification-review-cow-a" },
+        { classificationId: "classification-cow-b", reviewId: "classification-review-cow-b" }
+      ] });
     const ration = { id: "ration-group", farmId: "farm-a", profileId: "diagnostic-profile", profileVersion: 1,
       sourceCitation: "TEST feed evidence", selectionId: "diagnostic-selection", calculatedAt: "2026-10-07T08:00:00.000Z",
       rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true,
@@ -46,6 +63,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
         { outputCode: "ME_MJ_DAY", outputUnit: "MJ ME/day", value: 65 },
         { outputCode: "CP_KG_DAY", outputUnit: "kg CP/day", value: 0.9 }
       ] };
+    await localDb.put("nutrition_requirement_profiles", { id: "requirement-profile", farmId: "farm-a", version: 1, status: "approved" });
     await localDb.put("nutrition_requirement_calculations", requirement); repository.setActiveFarm("farm-a");
     const comparison = await repository.reviewRequirementRationComparison(requirement.id, ration.id, {
       allocationReviewId: saved.id, decision: "ACKNOWLEDGED", rationale: "Reviewed the documented individual allocation arithmetic.",

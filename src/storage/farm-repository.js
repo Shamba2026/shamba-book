@@ -10,6 +10,7 @@ import { calculateRequirements, validateRequirementApplicability, validateRequir
   validateRequirementProfile, validateRequirementReview } from "../domain/nutrition-requirement.js?build=20261006-02";
 import { compareRequirementToRationEvidence, validateComparisonReview } from
   "../domain/feed/requirement-ration-comparison.js?build=20261007-04";
+import { requireCurrentComparisonEvidence } from "../domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { validateRationAllocationEvidence } from "../domain/feed/ration-allocation.js?build=20261007-03";
 
 let activeFarmId = null;
@@ -341,6 +342,13 @@ export async function reviewRequirementRationComparison(requirementCalculationId
   if (allocationReviewId && (!allocationReview || allocationReview.farmId !== farmId)) {
     throw new Error("Allocation evidence is not available in the active farm.");
   }
+  const [requirementProfile, classifications, selectedDiagnostic] = await Promise.all([
+    get("nutrition_requirement_profiles", requirement.profileId), getAll("animal_nutrition_classifications"),
+    getSelectedDiagnosticProfile()
+  ]);
+  const latestClassification = classifications.filter((row) => row.farmId === farmId && row.animalId === requirement.animalId)
+    .sort((a, b) => b.version - a.version || String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
+  requireCurrentComparisonEvidence({ requirement, rationReview, requirementProfile, latestClassification, selectedDiagnostic });
   const report = compareRequirementToRationEvidence(requirement, rationReview, requirement.animalId, allocationReview);
   const review = validateComparisonReview(input);
   const event = Object.freeze({ id: newId(), farmId, animalId: requirement.animalId,

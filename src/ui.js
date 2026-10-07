@@ -2,11 +2,12 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-05";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261007-06";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
 import { compareRequirementToRationEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-04";
+import { assessComparisonEvidenceCurrency } from "./domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { getAuthClient } from "./auth.js";
 import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
@@ -764,19 +765,27 @@ function renderRequirementCalculations(classifications, profiles, applicabilityR
     ' · immutable calculation · no ration recommendation or inventory movement</small></div>').join("");
 }
 
-function renderRequirementRationComparisonOptions(animalId, calculations, rationReviews, allocationReviews) {
-  comparisonRequirementCalculations = calculations;
+function renderRequirementRationComparisonOptions(animalId, calculations, rationReviews, allocationReviews,
+  requirementProfiles, classifications, selectedDiagnostic) {
+  const latestClassification = classifications[0] || null;
+  const currentCalculations = calculations.filter((requirement) => {
+    const requirementProfile = requirementProfiles.find((profile) => profile.id === requirement.profileId);
+    return rationReviews.some((rationReview) => assessComparisonEvidenceCurrency({ requirement, rationReview,
+      requirementProfile, latestClassification, selectedDiagnostic }).eligible);
+  });
+  comparisonRequirementCalculations = currentCalculations;
   const daily = rationReviews.filter((row) => row.rationBasis === "DAILY_OFFERED_RATION" && row.rationBasisConfirmed === true &&
-    row.animalGroup?.some((animal) => animal.id === animalId));
+    row.animalGroup?.some((animal) => animal.id === animalId) && selectedDiagnostic?.profile?.id === row.profileId &&
+    selectedDiagnostic?.profile?.version === row.profileVersion && selectedDiagnostic?.selection?.id === row.selectionId);
   comparisonRationReviews = daily.flatMap((rationReview) => {
     if (rationReview.animalGroup.length === 1) return [{ key: rationReview.id, rationReview, allocationReview: null }];
     return allocationReviews.filter((review) => review.rationReviewId === rationReview.id &&
       review.allocations?.some((allocation) => allocation.animalId === animalId)).map((allocationReview) =>
       ({ key: rationReview.id + "::" + allocationReview.id, rationReview, allocationReview }));
   });
-  $("#requirement-ration-comparison-form").hidden = !calculations.length || !comparisonRationReviews.length;
-  $("#requirement-ration-comparison-empty").hidden = !calculations.length || comparisonRationReviews.length > 0;
-  $("#requirement-ration-calculation").replaceChildren(new Option("Choose calculation", ""), ...calculations.map((row) =>
+  $("#requirement-ration-comparison-form").hidden = !currentCalculations.length || !comparisonRationReviews.length;
+  $("#requirement-ration-comparison-empty").hidden = !currentCalculations.length || comparisonRationReviews.length > 0;
+  $("#requirement-ration-calculation").replaceChildren(new Option("Choose calculation", ""), ...currentCalculations.map((row) =>
     new Option(row.sourceTitle + " · " + row.calculatedAt, row.id)));
   $("#requirement-ration-review").replaceChildren(new Option("Choose ration evidence", ""), ...comparisonRationReviews.map((row) =>
     new Option(row.rationReview.profileName + " v" + row.rationReview.profileVersion + " · " + row.rationReview.calculatedAt +
@@ -868,18 +877,19 @@ async function openAnimal(animalId) {
     image.hidden = true;
   }
   const [classifications, reviews, profiles, requirementProfiles, applicabilityReviews, requirementCalculations, rationReviews,
-    allocationReviews, comparisonReviews] = await Promise.all([
+    allocationReviews, comparisonReviews, currentDiagnostic] = await Promise.all([
     FarmRepository.listAnimalNutritionClassifications(animalId), FarmRepository.listAnimalNutritionClassificationReviews(animalId),
     FarmRepository.listDiagnosticProfiles({ includeArchived: false }), FarmRepository.listNutritionRequirementProfiles({ includeDrafts: true }),
     FarmRepository.listNutritionRequirementApplicabilityReviews(animalId), FarmRepository.listNutritionRequirementCalculations(animalId),
     FarmRepository.listDiagnosticWarningHistory(), FarmRepository.listRationAllocationEvidence(),
-    FarmRepository.listRequirementRationComparisonReviews(animalId)]);
+    FarmRepository.listRequirementRationComparisonReviews(animalId), FarmRepository.getSelectedDiagnosticProfile()]);
   if (!canShowFarmData(generation) || selectedAnimalId !== animalId) return;
   renderAnimalNutritionClassifications(classifications);
   renderAnimalNutritionReviews(classifications, reviews, profiles);
   renderRequirementApplicability(classifications, requirementProfiles, applicabilityReviews);
   renderRequirementCalculations(classifications, requirementProfiles, applicabilityReviews, requirementCalculations);
-  renderRequirementRationComparisonOptions(animalId, requirementCalculations, rationReviews, allocationReviews);
+  renderRequirementRationComparisonOptions(animalId, requirementCalculations, rationReviews, allocationReviews,
+    requirementProfiles, classifications, currentDiagnostic);
   renderRequirementRationReviews(comparisonReviews);
 }
 

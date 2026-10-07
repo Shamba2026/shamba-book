@@ -22,7 +22,13 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
     await localDb.put("animal_nutrition_classifications", { id: "class-a", farmId: "farm-a", animalId: "cow-a", version: 1,
       liveWeightKg: 500, averageDailyMilkLiters: 20, createdAt: "2026-10-06T00:00:00Z" });
     await localDb.put("animal_nutrition_classification_reviews", { id: "review-a", farmId: "farm-a", animalId: "cow-a",
-      classificationId: "class-a", evidenceDecision: "CONFIRMED", reviewerConfirmed: true, reviewedAt: "2026-10-06T01:00:00Z" });
+      classificationId: "class-a", evidenceDecision: "CONFIRMED", reviewerConfirmed: true, profileId: "diag-a",
+      applicabilityDecision: "APPLICABLE", reviewerUserId: "reviewer", reviewedAt: "2026-10-06T01:00:00Z" });
+    await localDb.put("feed_diagnostic_profiles", { id: "diag-a", farmId: "farm-a", version: 1,
+      animalClass: "LACTATING_DAIRY_COW", status: "active" });
+    await localDb.put("feed_diagnostic_profile_selections", { id: "selection-a", farmId: "farm-a", profileId: "diag-a",
+      applicabilityConfirmed: true, selectedAt: "2026-10-06T01:30:00Z", animalGroup: [{ id: "cow-a" }],
+      classificationEvidence: [{ classificationId: "class-a", reviewId: "review-a" }] });
     const draft = await repository.createNutritionRequirementProfile({ name: "Synthetic requirement", version: 1,
       animalClass: "LACTATING_DAIRY_COW", applicability: "Synthetic browser test only", nutrientSystem: "TEST SYSTEM",
       sourceTitle: "Synthetic source", sourceCitation: "TEST-REQ-BROWSER-001", publicationYear: 2021,
@@ -41,7 +47,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
       rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true, animalGroup: [{ id: "cow-a", animalCode: "TEST-REQ-COW" }],
       ration: { totalDMIKg: 8, meDensityMJPerKgDM: 10, cpPercentDM: 12, totalAsFedKg: 20, forageDMKg: 5, totalCostCents: 100 } });
     await localDb.put("feed_diagnostic_warning_events", { id: "ration-group", farmId: "farm-a", profileId: "diag-a", profileVersion: 1,
-      sourceCitation: "TEST-RATION-GROUP-001", selectionId: "selection-group", calculatedAt: "2026-10-06T02:30:00Z",
+      sourceCitation: "TEST-RATION-GROUP-001", selectionId: "selection-a", calculatedAt: "2026-10-06T02:30:00Z",
       rationBasis: "DAILY_OFFERED_RATION", rationBasisConfirmed: true,
       animalGroup: [{ id: "cow-a", animalCode: "TEST-REQ-COW" }, { id: "cow-b", animalCode: "TEST-REQ-COW-B" }],
       ration: { totalDMIKg: 16, meDensityMJPerKgDM: 10, cpPercentDM: 12, totalAsFedKg: 40, forageDMKg: 10, totalCostCents: 200 } });
@@ -66,6 +72,9 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
       { reviewerUserId: "reviewer", rationale: "Synthetic revocation", reviewerConfirmed: true });
     let revokedRejected = false; try { await repository.calculateAnimalNutritionRequirements(draft.id, "cow-a", { confirmed: true, initiatedByUserId: "tester" }); }
     catch { revokedRejected = true; }
+    let revokedComparisonRejected = false; try { await repository.reviewRequirementRationComparison(calculation.id, "ration-a", {
+      decision: "ACKNOWLEDGED", rationale: "Revoked requirement evidence must fail closed.", reviewerUserId: "reviewer", reviewerConfirmed: true }); }
+    catch { revokedComparisonRejected = true; }
     repository.setActiveFarm("farm-b"); const hidden = (await repository.listNutritionRequirementProfiles()).length === 0;
     const calculationsHidden = (await repository.listNutritionRequirementCalculations()).length === 0;
     const comparisonReviewsHidden = (await repository.listRequirementRationComparisonReviews()).length === 0;
@@ -75,7 +84,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
     const db = await localDb.openLocalDatabase(); const stores = [...db.objectStoreNames]; const version = db.version; db.close();
     return { version, stores, draftRejected, unreviewedRejected, applicability, approved, calculation, groupComparisonRejected,
       comparisonRollbackRejected,
-      comparisonRowsAfterRollback, comparisonReview, revoked, revokedRejected,
+      comparisonRowsAfterRollback, comparisonReview, revoked, revokedRejected, revokedComparisonRejected,
       hidden, calculationsHidden, comparisonReviewsHidden, crossFarmReviewRejected,
       records: await localDb.getAll("records"), queue: await localDb.getAll("sync_queue"), movements: await localDb.getAll("feed_inventory_movements") };
   });
@@ -90,6 +99,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
   assert.equal(result.comparisonReview.report.comparisons[0].status, "BELOW_DOCUMENTED_REQUIREMENT");
   assert.equal(result.comparisonRollbackRejected, true); assert.equal(result.comparisonRowsAfterRollback.length, 0);
   assert.equal(result.revoked.profile.status, "revoked"); assert.equal(result.revokedRejected, true);
+  assert.equal(result.revokedComparisonRejected, true, "revoked requirement evidence must not accept a new comparison review");
   assert.equal(result.hidden, true); assert.equal(result.calculationsHidden, true); assert.equal(result.comparisonReviewsHidden, true);
   assert.equal(result.crossFarmReviewRejected, true);
   assert.equal(result.records.length, 0);
