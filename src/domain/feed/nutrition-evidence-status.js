@@ -58,7 +58,8 @@ export function summarizeHerdNutritionEvidence(animals) {
     return Object.freeze({ animalId: row.animalId, animalCode: row.animalCode,
       evidenceComplete: stages.length > 0 && outstanding.length === 0,
       outstanding: Object.freeze(outstanding.map(({ code, state }) => Object.freeze({ code, state }))) });
-  });
+  }).sort((a, b) => Number(a.evidenceComplete) - Number(b.evidenceComplete) ||
+    String(a.animalCode).localeCompare(String(b.animalCode)));
   return Object.freeze({ totalAnimals: rows.length,
     completeAnimals: rows.filter((row) => row.evidenceComplete).length,
     attentionAnimals: rows.filter((row) => !row.evidenceComplete).length,

@@ -712,11 +712,17 @@ function renderHerdNutritionReadiness(summary) {
   $("#herd-nutrition-readiness").innerHTML = '<div class="section-head"><h3>Nutrition evidence readiness</h3><span class="chip">Read only</span></div>' +
     '<p><strong>' + escapeHtml(summary.completeAnimals + " of " + summary.totalAnimals) +
     '</strong> eligible animals have a complete current evidence chain.</p>' +
-    (summary.animals.length ? '<div class="feed-list">' + summary.animals.map((row) => '<div class="evidence-row"><strong>' +
+    (summary.animals.length ? '<div class="nutrition-review-filters session-tabs" role="group" aria-label="Nutrition review queue filter">' +
+      '<button type="button" class="active" data-nutrition-filter="all" aria-pressed="true">All (' + escapeHtml(summary.totalAnimals) + ')</button>' +
+      '<button type="button" data-nutrition-filter="attention" aria-pressed="false">Attention (' + escapeHtml(summary.attentionAnimals) + ')</button>' +
+      '<button type="button" data-nutrition-filter="complete" aria-pressed="false">Complete (' + escapeHtml(summary.completeAnimals) + ')</button></div>' +
+      '<div class="feed-list nutrition-review-queue">' + summary.animals.map((row) => '<button type="button" class="evidence-row nutrition-review-row" ' +
+      'data-nutrition-animal-id="' + escapeHtml(row.animalId) + '" data-nutrition-status="' +
+      (row.evidenceComplete ? "complete" : "attention") + '"><strong>' +
       escapeHtml(row.animalCode + " · " + (row.evidenceComplete ? "EVIDENCE COMPLETE" : "ATTENTION")) + '</strong><span>' +
       escapeHtml(row.evidenceComplete ? "All controlled evidence stages are current." : "Outstanding: " + row.outstanding.map((item) =>
         labels[item.code] + " (" + labelEnum(item.state) + ")").join("; ")) +
-      '</span></div>').join("") + '</div>' : '<p class="muted">No active or dry animals require nutrition evidence review.</p>') +
+      '</span><small>Open animal evidence</small></button>').join("") + '</div>' : '<p class="muted">No active or dry animals require nutrition evidence review.</p>') +
     '<p class="muted">Workflow evidence only; this is not a biological adequacy judgment or ration recommendation.</p>';
 }
 
@@ -1601,6 +1607,23 @@ export async function initApp() {
   $("#animal-list").addEventListener("click", (event) => {
     const card = event.target.closest("[data-animal-id]");
     if (card) openAnimal(card.dataset.animalId);
+  });
+  $("#herd-nutrition-readiness").addEventListener("click", (event) => {
+    const filterButton = event.target.closest("[data-nutrition-filter]");
+    if (filterButton) {
+      const filter = filterButton.dataset.nutritionFilter;
+      $("#herd-nutrition-readiness").querySelectorAll("[data-nutrition-filter]").forEach((button) => {
+        const active = button === filterButton;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      $("#herd-nutrition-readiness").querySelectorAll("[data-nutrition-status]").forEach((row) => {
+        row.hidden = filter !== "all" && row.dataset.nutritionStatus !== filter;
+      });
+      return;
+    }
+    const row = event.target.closest("[data-nutrition-animal-id]");
+    if (row) openAnimal(row.dataset.nutritionAnimalId);
   });
 
   $("#breeding-date").addEventListener("change", () => {
