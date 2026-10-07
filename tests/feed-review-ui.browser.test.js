@@ -243,8 +243,7 @@ try {
   await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav="animals"]').click();
   await page.locator("#herd-nutrition-readiness").waitFor();
   const herdReadinessText = await page.locator("#herd-nutrition-readiness").textContent();
-  console.log("herd nutrition readiness after requirement revocation:", herdReadinessText);
-  assert.match(herdReadinessText, /1 of 1/, "herd summary must include the retained eligible animal");
+  assert.match(herdReadinessText, /0 of 1/, "revoked evidence must exclude the retained animal from the complete count");
   assert.match(herdReadinessText, /ATTENTION/,
     "revoked requirement evidence must prevent a complete herd evidence chain");
   await page.locator('[data-animal-id="diagnostic-test-animal"]').click(); await page.locator("#animal-profile:visible").waitFor();
