@@ -164,6 +164,14 @@ try {
   })), true, "bundled farm visual must load and decode");
   await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: path.join(artifactDir, "signed-out-landing.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true,
+    "mobile signed-out landing must not overflow horizontally");
+  assert.equal(await page.locator(".landing-hero h2").isVisible(), true);
+  assert.equal(await page.locator("#auth-email").isVisible(), true);
+  assert.equal(await page.locator("#auth-sign-in").isVisible(), true);
+  await page.screenshot({ path: path.join(artifactDir, "signed-out-landing-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
   assert.equal(await page.locator("#sync-count").textContent(), "0");
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
