@@ -7,14 +7,25 @@
   <meta name="description" content="Ngombe Herdbook — livestock records and farm management.">
   <link rel="preload" href="./assets/landing-dairy-farm.jpg" as="image" type="image/jpeg">
   <link rel="manifest" href="./manifest.json?v=15">
-  <link rel="stylesheet" href="./styles/app.css?build=20261008-01">
+  <link rel="stylesheet" href="./styles/app.css?build=20261009-01">
   <style id="auth-critical-style">.auth-gated{display:none!important}.auth-lock-message{display:block}</style>
   <title>Ngombe Herdbook</title>
 </head>
 <body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-cow" viewBox="0 0 24 24"><path d="M5 9 3 6m16 3 2-3M6 8c2-2 10-2 12 0v7c0 4-3 6-6 6s-6-2-6-6V8Zm3 5h.01M15 13h.01M9 17c2 1 4 1 6 0M8 8 6 4m10 4 2-4"/></symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8v9h-6v-6H9v6H3v-9Z"/></symbol>
+    <symbol id="icon-milk" viewBox="0 0 24 24"><path d="M8 3h8l1 4v2c0 2 2 3 2 6v6H5v-6c0-3 2-4 2-6V7l1-4Zm-1 7h10M9 3v4h6V3"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24"><path d="M4 6h16v15H4V6Zm4-3v6m8-6v6M4 11h16"/></symbol>
+    <symbol id="icon-health" viewBox="0 0 24 24"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3Z"/></symbol>
+    <symbol id="icon-weight" viewBox="0 0 24 24"><path d="M5 8h14l2 13H3L5 8Zm4 0a3 3 0 0 1 6 0m-3 4 3-2"/></symbol>
+    <symbol id="icon-breeding" viewBox="0 0 24 24"><path d="M8 13a5 5 0 1 1 4-8 5 5 0 1 1 4 8M8 13v8m-3-3h6m5-5v4m-2-2h4"/></symbol>
+    <symbol id="icon-finance" viewBox="0 0 24 24"><path d="M4 7h16v13H4V7Zm3-3h10v3M8 13h8m-4-3v6"/></symbol>
+    <symbol id="icon-feed" viewBox="0 0 24 24"><path d="M5 20c0-8 4-13 14-16 0 10-4 16-12 16H5Zm2-2c3-4 6-7 10-10"/></symbol>
+  </svg>
   <main class="app-shell">
     <header class="header">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">🐄</span><div><h1>Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><svg aria-hidden="true" class="brand-icon"><use href="#icon-cow"/></svg></span><div><h1>Ngombe Herdbook</h1><p>Mifugo yangu, kiganjani mwangu.</p></div></div>
       <div class="header-actions"><div id="app-status" class="status-pill">Starting…</div><details id="account-actions" hidden><summary>Account</summary><div class="account-menu"><button id="auth-sign-out" type="button" hidden>Sign out</button><button id="auth-restore" type="button" hidden disabled>Restore cloud data</button><p class="muted">Cloud restore is paused while local record ownership is reviewed.</p><div id="recovery-evidence" hidden><label for="recovery-backup">Compare local evidence backup</label><input id="recovery-backup" type="file" accept=".json,application/json"><output id="recovery-result" aria-live="polite"></output><div id="recovery-claim" hidden><label for="recovery-animal">Select an unowned animal</label><select id="recovery-animal"></select><label for="recovery-code">Type its full name / ID to confirm</label><input id="recovery-code" autocomplete="off"><label><input id="recovery-confirm" type="checkbox"> I confirm this animal and its linked photo and pending entry belong to this farm.</label><button id="recovery-claim-button" type="button" disabled>Claim selected local animal</button></div><p class="muted">Recovery changes only the explicitly claimed local group after a fresh online membership check. Cloud sync and Restore stay disabled.</p></div></div></details></div>
     </header>
     <div id="fatal-error" class="fatal" hidden></div>
@@ -48,20 +59,20 @@
       </div>
 
       <div class="grid two home-overview">
-        <div class="card overview-card"><div class="overview-icon" aria-hidden="true">🥛</div><h3>Today's milk</h3><div id="today-milk" class="overview-value">0 L</div><div class="muted">Indicative value at KSh 49/L: <strong id="today-value">KSh 0</strong></div></div>
-        <div class="card overview-card"><div class="overview-icon" aria-hidden="true">📅</div><h3>This milk week</h3><div id="week-period" class="overview-value week-value">—</div><div class="muted">Payment day: Saturday</div></div>
+        <div class="card overview-card"><div class="overview-icon" aria-hidden="true"><svg aria-hidden="true" class="overview-svg"><use href="#icon-milk"/></svg></div><h3>Today's milk</h3><div id="today-milk" class="overview-value">0 L</div><div class="muted">Indicative value at KSh 49/L: <strong id="today-value">KSh 0</strong></div></div>
+        <div class="card overview-card"><div class="overview-icon" aria-hidden="true"><svg aria-hidden="true" class="overview-svg"><use href="#icon-calendar"/></svg></div><h3>This milk week</h3><div id="week-period" class="overview-value week-value">—</div><div class="muted">Payment day: Saturday</div></div>
       </div>
 
       <div class="card home-actions">
         <div class="section-head"><div><p class="eyebrow">SHORTCUTS</p><h3>What would you like to record?</h3></div></div>
         <div class="quick-actions">
-          <button class="action" type="button" data-nav-action="milk"><strong>🥛 Record milk</strong><span>Morning, afternoon or evening</span></button>
-          <button class="action" type="button" data-nav-action="animals"><strong>🐄 Add animal</strong><span>Photo required</span></button>
-          <button class="action" type="button" data-nav-action="health"><strong>🩺 Health record</strong><span>Treatment and cost</span></button>
-          <button class="action" type="button" data-nav-action="weight"><strong>⚖ Record bull weight</strong><span>Weight in kg</span></button>
-          <button class="action" type="button" data-nav-action="breeding"><strong>🐄 Record breeding</strong><span>Dairy service</span></button>
-          <button class="action" type="button" data-nav-action="finance"><strong>💰 Finance</strong><span>Income and expenses</span></button>
-          <button class="action" type="button" data-nav-action="feeds"><strong>🌿 Feed library</strong><span>Sources and nutrition evidence</span></button>
+          <button class="action" type="button" data-nav-action="milk"><svg aria-hidden="true" class="action-icon"><use href="#icon-milk"/></svg><strong>Record milk</strong><span>Morning, afternoon or evening</span></button>
+          <button class="action" type="button" data-nav-action="animals"><svg aria-hidden="true" class="action-icon"><use href="#icon-cow"/></svg><strong>Add animal</strong><span>Photo required</span></button>
+          <button class="action" type="button" data-nav-action="health"><svg aria-hidden="true" class="action-icon"><use href="#icon-health"/></svg><strong>Health record</strong><span>Treatment and cost</span></button>
+          <button class="action" type="button" data-nav-action="weight"><svg aria-hidden="true" class="action-icon"><use href="#icon-weight"/></svg><strong>Record bull weight</strong><span>Weight in kg</span></button>
+          <button class="action" type="button" data-nav-action="breeding"><svg aria-hidden="true" class="action-icon"><use href="#icon-breeding"/></svg><strong>Record breeding</strong><span>Dairy service</span></button>
+          <button class="action" type="button" data-nav-action="finance"><svg aria-hidden="true" class="action-icon"><use href="#icon-finance"/></svg><strong>Finance</strong><span>Income and expenses</span></button>
+          <button class="action" type="button" data-nav-action="feeds"><svg aria-hidden="true" class="action-icon"><use href="#icon-feed"/></svg><strong>Feed library</strong><span>Sources and nutrition evidence</span></button>
         </div>
       </div>
 
@@ -257,11 +268,11 @@
   </main>
 
   <nav class="bottom-nav auth-gated" aria-label="Primary navigation">
-    <button type="button" data-nav="home"><span class="nav-icon" aria-hidden="true">⌂</span><span>Home</span></button>
-    <button type="button" data-nav="animals"><span class="nav-icon" aria-hidden="true">🐄</span><span>Animals</span></button>
-    <button type="button" data-nav="milk"><span class="nav-icon" aria-hidden="true">◉</span><span>Milk</span></button>
-    <button type="button" data-nav="health"><span class="nav-icon" aria-hidden="true">✚</span><span>Health</span></button>
-    <button type="button" data-nav="finance"><span class="nav-icon" aria-hidden="true">▣</span><span>Finance</span></button>
+    <button type="button" data-nav="home"><svg aria-hidden="true" class="nav-icon"><use href="#icon-home"/></svg><span>Home</span></button>
+    <button type="button" data-nav="animals"><svg aria-hidden="true" class="nav-icon"><use href="#icon-cow"/></svg><span>Animals</span></button>
+    <button type="button" data-nav="milk"><svg aria-hidden="true" class="nav-icon"><use href="#icon-milk"/></svg><span>Milk</span></button>
+    <button type="button" data-nav="health"><svg aria-hidden="true" class="nav-icon"><use href="#icon-health"/></svg><span>Health</span></button>
+    <button type="button" data-nav="finance"><svg aria-hidden="true" class="nav-icon"><use href="#icon-finance"/></svg><span>Finance</span></button>
   </nav>
 
   <script>
