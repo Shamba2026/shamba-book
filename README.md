@@ -6,7 +6,7 @@ Ngombe Herdbook is a local-first livestock and farm-record PWA for Kenyan dairy 
 
 - Production branch: `main`
 - Verified head: `8c7ed1907cc2ff2861b8262fdce76942a6e2f0f5`
-- Published UI build: `20261007-14`
+- Candidate UI build: `20261008-01` (signed-out landing design correction; not released)
 - Hosting: GitHub Pages
 - Authentication: required before farm views render
 - Local ownership: active farm membership and local farm identifiers gate new records
