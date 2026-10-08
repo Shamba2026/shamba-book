@@ -151,6 +151,11 @@ try {
   assert.equal(await page.locator(".landing-features article").count(), 4);
   assert.match(await page.locator(".landing-hero").evaluate((el) => getComputedStyle(el).backgroundImage),
     /landing-dairy-farm\.webp/, "signed-out hero must use the bundled farm visual");
+  const farmVisualResponse = await page.request.get(`${origin}/assets/landing-dairy-farm.webp`);
+  assert.equal(farmVisualResponse.status(), 200,
+    `bundled farm visual request failed with ${farmVisualResponse.status()}`);
+  assert.equal(farmVisualResponse.headers()["content-type"], "image/webp");
+  assert.ok((await farmVisualResponse.body()).length > 0, "bundled farm visual must not be empty");
   assert.equal(await page.evaluate(() => new Promise((resolve) => {
     const image = new Image();
     image.onload = () => resolve(image.naturalWidth > 0);
