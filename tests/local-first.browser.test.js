@@ -49,7 +49,7 @@ export async function getAuthClient() { return { auth, from(table) {
 `;
 
 const contentTypes = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
-  ".webp": "image/webp" };
+  ".jpg": "image/jpeg", ".webp": "image/webp" };
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, "http://127.0.0.1").pathname;
   if (request.method !== "GET") { response.writeHead(405).end(); return; }
@@ -150,17 +150,17 @@ try {
   assert.match(await page.locator("#auth-lock-message").textContent(), /Your herd records, clear and close at hand/);
   assert.equal(await page.locator(".landing-features article").count(), 4);
   assert.match(await page.locator(".landing-hero").evaluate((el) => getComputedStyle(el).backgroundImage),
-    /landing-dairy-farm\.webp/, "signed-out hero must use the bundled farm visual");
-  const farmVisualResponse = await page.request.get(`${origin}/assets/landing-dairy-farm.webp`);
+    /landing-dairy-farm\.jpg/, "signed-out hero must use the bundled farm visual");
+  const farmVisualResponse = await page.request.get(`${origin}/assets/landing-dairy-farm.jpg`);
   assert.equal(farmVisualResponse.status(), 200,
     `bundled farm visual request failed with ${farmVisualResponse.status()}`);
-  assert.equal(farmVisualResponse.headers()["content-type"], "image/webp");
+  assert.equal(farmVisualResponse.headers()["content-type"], "image/jpeg");
   assert.ok((await farmVisualResponse.body()).length > 0, "bundled farm visual must not be empty");
   assert.equal(await page.evaluate(() => new Promise((resolve) => {
     const image = new Image();
     image.onload = () => resolve(image.naturalWidth > 0);
     image.onerror = () => resolve(false);
-    image.src = "./assets/landing-dairy-farm.webp";
+    image.src = "./assets/landing-dairy-farm.jpg";
   })), true, "bundled farm visual must load and decode");
   await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: path.join(artifactDir, "signed-out-landing.png"), fullPage: true });
