@@ -55,7 +55,7 @@ The first implementation slice establishes:
 
 Weather remains behind a provider adapter. No paid weather service is enabled by this branch.
 
-## Current next gate
+## Historical next gate (superseded by Entry 006)
 
 Verify the live Supabase schema, storage and RLS/auth model before enabling cloud synchronization.
 
@@ -67,3 +67,31 @@ Verify the live Supabase schema, storage and RLS/auth model before enabling clou
 - no credential rotation;
 - no real payment/financial messaging;
 - no live financial transactions.
+
+## Entry 006 — Released local-first baseline
+
+Verified on 2026-10-09:
+
+- `main` points to `8c7ed1907cc2ff2861b8262fdce76942a6e2f0f5`;
+- GitHub Pages serves UI build `20261007-14`;
+- authentication gates farm views and signed-out rendering contains no animal cards;
+- the sign-in landing has desktop and 390 × 844 browser regression evidence;
+- local animal/photo/queue and record/queue saves use atomic IndexedDB transactions;
+- new local records are farm-scoped after membership verification;
+- legacy local ownership requires explicit backup comparison and farmer confirmation;
+- cloud synchronization and Restore remain disabled.
+
+Released review workflows now cover:
+
+- farm-scoped feed library and source observations;
+- inventory batches, cost provenance and reviewed movements;
+- nutrition evidence, versioned diagnostics and animal classification governance;
+- documented requirements and read-only ration evidence comparisons;
+- append-only review, supersession and stale-evidence handling;
+- local finance records with farm-scoped access.
+
+These workflows do not authorize automatic ration recommendations, automatic inventory consumption, production threshold seeding, cloud writes, schema migrations or RLS changes.
+
+## Current next gate
+
+Keep the released safety boundaries intact while completing focused usability and evidence-quality audits. Any future cloud work requires a separate live-schema, membership, storage and RLS release unit.
