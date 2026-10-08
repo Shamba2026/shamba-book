@@ -48,7 +48,8 @@ export async function getAuthClient() { return { auth, from(table) {
 } }; }
 `;
 
-const contentTypes = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };
+const contentTypes = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
+  ".webp": "image/webp" };
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, "http://127.0.0.1").pathname;
   if (request.method !== "GET") { response.writeHead(405).end(); return; }
@@ -58,7 +59,7 @@ const server = createServer(async (request, response) => {
   }
   const relative = pathname === "/" ? "index.html" : pathname.slice(1);
   const filename = path.resolve(root, relative);
-  if (!filename.startsWith(root + path.sep) || !/^(index\.html|manifest\.json|src\/|styles\/)/.test(relative)) {
+  if (!filename.startsWith(root + path.sep) || !/^(index\.html|manifest\.json|assets\/|src\/|styles\/)/.test(relative)) {
     response.writeHead(404).end(); return;
   }
   try {
@@ -150,6 +151,12 @@ try {
   assert.equal(await page.locator(".landing-features article").count(), 4);
   assert.match(await page.locator(".landing-hero").evaluate((el) => getComputedStyle(el).backgroundImage),
     /landing-dairy-farm\.webp/, "signed-out hero must use the bundled farm visual");
+  assert.equal(await page.evaluate(() => new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image.naturalWidth > 0);
+    image.onerror = () => resolve(false);
+    image.src = "./assets/landing-dairy-farm.webp";
+  })), true, "bundled farm visual must load and decode");
   await mkdir(artifactDir, { recursive: true });
   await page.screenshot({ path: path.join(artifactDir, "signed-out-landing.png"), fullPage: true });
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
