@@ -148,7 +148,9 @@ try {
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
   assert.equal(await page.locator("#auth-lock-message").isVisible(), true);
   assert.match(await page.locator("#auth-lock-message").textContent(), /Your herd records, clear and close at hand/);
-  assert.equal(await page.locator(".landing-features article").count(), 4);
+  assert.equal(await page.locator(".landing-ledger article").count(), 4);
+  assert.equal(await page.locator(".landing-ledger [aria-hidden='true']").count(), 0,
+    "signed-out capability summary should not depend on decorative icon tiles");
   assert.match(await page.locator(".landing-hero").evaluate((el) => getComputedStyle(el).backgroundImage),
     /landing-dairy-farm\.jpg/, "signed-out hero must use the bundled farm visual");
   const farmVisualResponse = await page.request.get(`${origin}/assets/landing-dairy-farm.jpg`);
