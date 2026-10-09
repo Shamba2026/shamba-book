@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { APP_CONFIG } from "../src/config.js";
+import { collectAuthReadiness, waitForAuthenticatedApp } from "./support/browser-auth-readiness.js";
 
 // This server is restricted to loopback and replaces only the authentication module.
 // Farm storage, validation, UI and sync modules are served unchanged from the repository.
@@ -125,6 +126,14 @@ async function localState(page, expectedId) {
   return animals[0].id;
 }
 
+async function authenticatedAppReady(page, expectedUserId) {
+  return waitForAuthenticatedApp(page, {
+    expectedUserId,
+    farmId: APP_CONFIG.cloud.farmId,
+    artifactPath: path.join(artifactDir, "authentication-readiness-timeout.png")
+  });
+}
+
 if (APP_CONFIG.cloud.enabled !== false) throw new Error("Browser test requires cloud synchronization disabled.");
 const browser = await chromium.launch({ headless: true });
 let context;
@@ -185,7 +194,7 @@ try {
   await page.locator("#auth-email").fill("synthetic@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   assert.equal(await page.locator("#app-status").getAttribute("role"), "status");
   assert.equal(await page.locator("#app-status").getAttribute("aria-live"), "polite");
   assert.equal(await page.locator("#auth-status").getAttribute("role"), "status");
@@ -238,6 +247,12 @@ try {
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
+  const outsiderReadiness = await collectAuthReadiness(page, {
+    expectedUserId: "other-test-user", farmId: APP_CONFIG.cloud.farmId
+  });
+  assert.equal(outsiderReadiness.ready, false);
+  assert.equal(outsiderReadiness.pending.includes("farm membership"), true);
+  assert.equal(outsiderReadiness.pending.includes("farm view"), true);
   assert.equal(await page.locator(".bottom-nav").isVisible(), false, "outsider must remain locked");
   // Give the asynchronous signed-in refresh time to complete before checking for leakage.
   await page.waitForTimeout(500);
@@ -255,7 +270,7 @@ try {
   await page.locator("#auth-email").fill("member@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "same-farm-user");
   await visibleAnimal(page);
   await localState(page, id);
   await page.locator("#account-actions summary").click();
@@ -264,7 +279,7 @@ try {
   await page.locator("#auth-email").fill("synthetic@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await visibleAnimal(page);
   await localState(page, id);
 
@@ -303,7 +318,7 @@ try {
   assert.equal((await storedRows(page, "records")).some((row) => row.id === "TEST-ROLLBACK-FINANCE"), false);
 
   await page.reload();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   assert.equal(await page.locator("#auth-card").isVisible(), false);
   await visibleAnimal(page);
   await localState(page, id);
@@ -312,7 +327,7 @@ try {
   page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(origin);
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await visibleAnimal(page);
   await localState(page, id);
   await page.evaluate(() => localStorage.setItem("ngombe-test-offline", "1"));
@@ -321,7 +336,7 @@ try {
       Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
   });
   await page.reload();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await visibleAnimal(page);
   await localState(page, id);
   await page.evaluate(() => localStorage.removeItem("ngombe-test-offline"));
@@ -340,7 +355,7 @@ try {
   await page.locator("#auth-email").fill("synthetic@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await visibleAnimal(page);
   await localState(page, id);
   await page.locator('button[data-nav="milk"]').click();
@@ -390,7 +405,7 @@ try {
     db.close();
   });
   await page.reload();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await page.locator('button[data-nav="animals"]').click();
   await page.waitForFunction(() => document.querySelector("#sync-count")?.textContent === "2");
   assert.equal(await page.locator("#animal-list").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false);
@@ -552,14 +567,14 @@ try {
   assert.equal((await storedRows(page, "sync_queue")).filter((row) => row.recordType === "finance" &&
     row.farmId === APP_CONFIG.cloud.farmId).length, 2);
   await page.reload();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await page.locator('button[data-nav="finance"]').click();
   await page.locator('#finance-count:has-text("2 entries")').waitFor();
   await page.close();
   page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(origin);
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "isolated-test-user");
   await page.locator('button[data-nav="finance"]').click();
   await page.locator('#finance-count:has-text("2 entries")').waitFor();
   assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "finance").length, 2,
@@ -581,6 +596,11 @@ try {
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await page.locator("#account-actions:not([hidden])").waitFor();
+  const laterOutsiderReadiness = await collectAuthReadiness(page, {
+    expectedUserId: "other-test-user", farmId: APP_CONFIG.cloud.farmId
+  });
+  assert.equal(laterOutsiderReadiness.ready, false);
+  assert.equal(laterOutsiderReadiness.pending.includes("farm membership"), true);
   assert.equal(await page.locator("#recovery-evidence").isVisible(), false);
   assert.equal(await page.locator("#finance-list").textContent(), "");
   const outsiderClaim = await page.evaluate(async (json) => {
@@ -601,7 +621,7 @@ try {
   await page.locator("#auth-email").fill("member@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
-  await page.locator("#account-actions:not([hidden])").waitFor();
+  await authenticatedAppReady(page, "same-farm-user");
   await page.locator('button[data-nav="animals"]').click();
   await page.locator("#animal-list [data-animal-id]").filter({ hasText: "TEST-UNOWNED-LEGACY" }).waitFor();
   await page.locator('button[data-nav="finance"]').click();
