@@ -70,10 +70,10 @@ Verify the live Supabase schema, storage and RLS/auth model before enabling clou
 
 ## Entry 006 — Released local-first baseline
 
-Verified on 2026-10-09:
+Verified on 2026-10-09 before the subsequent visual releases:
 
-- `main` points to `8c7ed1907cc2ff2861b8262fdce76942a6e2f0f5`;
-- GitHub Pages serves UI build `20261007-14`;
+- `main` pointed to `8c7ed1907cc2ff2861b8262fdce76942a6e2f0f5`;
+- GitHub Pages served UI build `20261007-14`;
 - authentication gates farm views and signed-out rendering contains no animal cards;
 - the sign-in landing has desktop and 390 × 844 browser regression evidence;
 - local animal/photo/queue and record/queue saves use atomic IndexedDB transactions;
@@ -91,6 +91,20 @@ Released review workflows now cover:
 - local finance records with farm-scoped access.
 
 These workflows do not authorize automatic ration recommendations, automatic inventory consumption, production threshold seeding, cloud writes, schema migrations or RLS changes.
+
+## Entry 007 — Released landing and icon system
+
+Verified on 2026-10-09:
+
+- PR #54 merged as `b00ba2ca1217743c7f92bfdaad48c0259993c465`;
+- `main` points to that merge commit;
+- GitHub Pages serves UI build `20261009-01`;
+- signed-out startup exposes no farm view or primary navigation;
+- authenticated desktop and mobile regression evidence shows the local SVG icon system in the brand, primary navigation and recording shortcuts;
+- the post-merge browser workflow passed on rerun after one transient authentication-readiness timeout;
+- no application-origin console error was observed on the deployed signed-out page.
+
+This visual release changed no persistence, authentication, farm-scoping, finance, nutrition, cloud, schema or RLS logic.
 
 ## Current next gate
 
