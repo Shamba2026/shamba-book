@@ -409,10 +409,10 @@ try {
   assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === eveningRows[0].id).status, "superseded");
   assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === correctionResult.replacementRecordId).status, "pending");
 
-  const effectiveEvening = await page.evaluate(async () => {
+  const effectiveEvening = await page.evaluate(async (localDate) => {
     const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
-    return repository.listMilkRecordsForDate("2026-09-21");
-  });
+    return repository.listMilkRecordsForDate(localDate);
+  }, eveningRows[0].localDate);
   assert.deepEqual(effectiveEvening.filter((row) => row.session === "evening").map((row) => row.volumeMl), [3125]);
   const repeatedCorrection = await page.evaluate(async ({ targetRecordId }) => {
     const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
@@ -451,11 +451,11 @@ try {
   assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "afternoon").length, 1);
   assert.equal((await storedRows(page, "sync_queue")).length, 5);
 
-  const morningRecord = await page.evaluate(async ({ animalId }) => {
+  const morningRecord = await page.evaluate(async ({ animalId, localDate }) => {
     const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
-    return repository.saveMilkRecord({ animalId, localDate: "2026-09-21", session: "morning",
+    return repository.saveMilkRecord({ animalId, localDate, session: "morning",
       liters: 4.25, volumeMl: 4250 });
-  }, { animalId: id });
+  }, { animalId: id, localDate: eveningRows[0].localDate });
   await page.evaluate(() => {
     const original = IDBObjectStore.prototype.put;
     window.__restoreMilkCorrectionPut = () => { IDBObjectStore.prototype.put = original; };
@@ -499,10 +499,10 @@ try {
   assert.equal(morningLedger.find((row) => row.id === morningRecord.id).volumeMl, 4250);
   assert.equal(morningLedger.find((row) => row.kind === "milk_correction").replacementRecordId, null);
   assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === morningRecord.id).status, "superseded");
-  const effectiveMorning = await page.evaluate(async () => {
+  const effectiveMorning = await page.evaluate(async (localDate) => {
     const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
-    return repository.listMilkRecordsForDate("2026-09-21");
-  });
+    return repository.listMilkRecordsForDate(localDate);
+  }, morningRecord.localDate);
   assert.equal(effectiveMorning.some((row) => row.id === morningRecord.id), false,
     "voided milk must not contribute to effective records");
   await page.locator('[data-milk-session="morning"]').click();
