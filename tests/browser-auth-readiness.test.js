@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { assessAuthReadiness } from "./support/browser-auth-readiness.js";
 
 const readySnapshot = {
@@ -37,5 +38,17 @@ assert.deepEqual(assessAuthReadiness({
   ready: false,
   pending: ["expected session", "non-error application status"]
 });
+
+const rationAllocationUiTest = await readFile(
+  new URL("./ration-allocation-ui.browser.test.js", import.meta.url),
+  "utf8"
+);
+assert.match(rationAllocationUiTest, /import \{ waitForAuthenticatedApp \} from "\.\/support\/browser-auth-readiness\.js";/);
+assert.doesNotMatch(rationAllocationUiTest, /#account-actions:not\(\[hidden\]\).*waitFor/);
+assert.equal(
+  (rationAllocationUiTest.match(/await authenticatedAppReady\(/g) || []).length,
+  3,
+  "each authenticated startup or reload must use the complete readiness gate"
+);
 
 console.log("browser-auth-readiness.test.js: PASS");
