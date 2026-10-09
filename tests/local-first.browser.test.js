@@ -609,7 +609,7 @@ try {
   assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "finance").length, 2,
     "reopening must not duplicate finance rows");
   assert.equal((await storedRows(page, "animals")).length, 2);
-  assert.equal((await storedRows(page, "sync_queue")).length, 5);
+  assert.equal((await storedRows(page, "sync_queue")).length, 7);
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
