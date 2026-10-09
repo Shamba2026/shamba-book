@@ -388,23 +388,59 @@ try {
   assert.equal(eveningRows[0].volumeMl, 2500, "milk volume must be stored as integer millilitres");
   assert.equal((await storedRows(page, "sync_queue")).length, 2);
 
+  await page.locator('button[data-milk-correction-action="correct"]').click();
+  await page.locator("#milk-correction-form:visible").waitFor();
+  await page.locator("#milk-correction-liters").fill("3.125");
+  await page.locator("#milk-correction-reason").fill("Synthetic meter-reading correction");
+  await page.locator('#milk-correction-form button[type="submit"]').click();
+  await page.locator('#app-status:has-text("Milk correction recorded")').waitFor();
+  assert.match(await page.locator("#milk-correction-history").textContent(), /Synthetic meter-reading correction/);
+  const correctionResult = (await storedRows(page, "records")).find((row) =>
+    row.kind === "milk_correction" && row.targetRecordId === eveningRows[0].id);
+  assert.equal(correctionResult.kind, "milk_correction");
+  assert.equal(correctionResult.targetRecordId, eveningRows[0].id);
+  assert.equal(correctionResult.replacementRecordId !== null, true);
+  const correctedRawRows = (await storedRows(page, "records")).filter((row) =>
+    row.id === eveningRows[0].id || row.id === correctionResult.id || row.id === correctionResult.replacementRecordId);
+  assert.equal(correctedRawRows.length, 3, "original, correction and replacement must all be retained");
+  assert.equal(correctedRawRows.find((row) => row.id === eveningRows[0].id).volumeMl, 2500,
+    "the original milk event must remain unchanged");
+  assert.equal(correctedRawRows.find((row) => row.id === correctionResult.replacementRecordId).volumeMl, 3125);
+  assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === eveningRows[0].id).status, "superseded");
+  assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === correctionResult.replacementRecordId).status, "pending");
+
+  const effectiveEvening = await page.evaluate(async () => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
+    return repository.listMilkRecordsForDate("2026-09-21");
+  });
+  assert.deepEqual(effectiveEvening.filter((row) => row.session === "evening").map((row) => row.volumeMl), [3125]);
+  const repeatedCorrection = await page.evaluate(async ({ targetRecordId }) => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
+    try {
+      await repository.correctMilkRecord({ targetRecordId, action: "void", reason: "Synthetic repeat attempt",
+        actorUserId: "isolated-test-user" });
+      return null;
+    } catch (error) { return error.message; }
+  }, { targetRecordId: eveningRows[0].id });
+  assert.match(repeatedCorrection, /already corrected/i);
+
   await page.locator("#milk-animal").selectOption(id);
   await page.locator("#milk-liters").fill("2.5");
   await page.locator('#milk-form button[type="submit"]').click();
   await page.locator('#app-status:has-text("already recorded")').waitFor();
   eveningRows = (await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening");
-  assert.equal(eveningRows.length, 1, "an ordinary duplicate submission must not create another record");
-  assert.equal((await storedRows(page, "sync_queue")).length, 2, "a rejected duplicate must not create a queue entry");
+  assert.equal(eveningRows.length, 2, "a rejected duplicate must not add to the retained original and replacement");
+  assert.equal((await storedRows(page, "sync_queue")).length, 3, "a rejected duplicate must not create a queue entry");
 
   await page.locator("#milk-additional").check();
   await page.locator('#milk-form button[type="submit"]').click();
   await page.locator('#app-status:has-text("Milk saved locally")').waitFor();
   eveningRows = (await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening");
-  assert.equal(eveningRows.length, 2, "an explicitly confirmed separate collection must be retained");
-  assert.equal((await storedRows(page, "sync_queue")).length, 3);
+  assert.equal(eveningRows.length, 3, "an explicitly confirmed separate collection must be retained");
+  assert.equal((await storedRows(page, "sync_queue")).length, 4);
 
   const concurrentResult = await page.evaluate(async ({ animalId, farmId }) => {
-    const repository = await import("/src/storage/farm-repository.js?build=20261009-01");
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
     repository.setActiveFarm(farmId);
     const input = { animalId, localDate: "2026-09-21", session: "afternoon", liters: 1.75, volumeMl: 1750 };
     const results = await Promise.allSettled([repository.saveMilkRecord(input), repository.saveMilkRecord(input)]);
@@ -413,7 +449,62 @@ try {
   assert.deepEqual(concurrentResult.sort(), ["fulfilled", "rejected"],
     "the atomic store guard must permit only one concurrent normal save");
   assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "afternoon").length, 1);
-  assert.equal((await storedRows(page, "sync_queue")).length, 4);
+  assert.equal((await storedRows(page, "sync_queue")).length, 5);
+
+  const morningRecord = await page.evaluate(async ({ animalId }) => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
+    return repository.saveMilkRecord({ animalId, localDate: "2026-09-21", session: "morning",
+      liters: 4.25, volumeMl: 4250 });
+  }, { animalId: id });
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.put;
+    window.__restoreMilkCorrectionPut = () => { IDBObjectStore.prototype.put = original; };
+    IDBObjectStore.prototype.put = function (value, ...args) {
+      if (this.name === "sync_queue" && value?.recordType === "milk" && value?.status === "pending" &&
+          value?.recordId !== window.__milkCorrectionTarget) {
+        throw new DOMException("Synthetic correction queue failure", "DataCloneError");
+      }
+      return original.call(this, value, ...args);
+    };
+  });
+  await page.evaluate((targetRecordId) => { window.__milkCorrectionTarget = targetRecordId; }, morningRecord.id);
+  const beforeFailedCorrection = {
+    records: (await storedRows(page, "records")).length,
+    queue: (await storedRows(page, "sync_queue")).length
+  };
+  const failedCorrection = await page.evaluate(async (targetRecordId) => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
+    try {
+      await repository.correctMilkRecord({ targetRecordId, action: "correct", replacementLiters: 4,
+        reason: "Synthetic rollback proof", actorUserId: "isolated-test-user" });
+      return null;
+    } catch (error) { return error.message; }
+  }, morningRecord.id);
+  assert.match(failedCorrection, /Synthetic correction queue failure/);
+  assert.equal((await storedRows(page, "records")).length, beforeFailedCorrection.records,
+    "a failed replacement queue write must roll back correction and replacement records");
+  assert.equal((await storedRows(page, "sync_queue")).length, beforeFailedCorrection.queue);
+  assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === morningRecord.id).status, "pending",
+    "a failed correction must leave the original queue entry pending");
+  await page.evaluate(() => window.__restoreMilkCorrectionPut());
+
+  await page.evaluate(async (targetRecordId) => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
+    await repository.correctMilkRecord({ targetRecordId, action: "void", reason: "Synthetic void proof",
+      actorUserId: "isolated-test-user" });
+  }, morningRecord.id);
+  const morningLedger = (await storedRows(page, "records")).filter((row) =>
+    row.id === morningRecord.id || row.targetRecordId === morningRecord.id);
+  assert.equal(morningLedger.length, 2, "void must retain the original and add one correction event");
+  assert.equal(morningLedger.find((row) => row.id === morningRecord.id).volumeMl, 4250);
+  assert.equal(morningLedger.find((row) => row.kind === "milk_correction").replacementRecordId, null);
+  assert.equal((await storedRows(page, "sync_queue")).find((row) => row.id === morningRecord.id).status, "superseded");
+  const effectiveMorning = await page.evaluate(async () => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261010-01");
+    return repository.listMilkRecordsForDate("2026-09-21");
+  });
+  assert.equal(effectiveMorning.some((row) => row.id === morningRecord.id), false,
+    "voided milk must not contribute to effective records");
   await page.locator('[data-milk-session="morning"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no morning record"));
   await page.evaluate(async () => {
@@ -597,6 +688,11 @@ try {
     row.farmId === APP_CONFIG.cloud.farmId).length, 2);
   await page.reload();
   await authenticatedAppReady(page, "isolated-test-user");
+  await page.locator('button[data-nav="milk"]').click();
+  await page.locator('[data-milk-session="evening"]').click();
+  await page.waitForFunction(() => document.querySelector("#milk-correction-history")?.textContent.includes("Synthetic meter-reading correction"));
+  assert.match(await page.locator("#milk-correction-history").textContent(), /Synthetic meter-reading correction/,
+    "correction history must survive reload");
   await page.locator('button[data-nav="finance"]').click();
   await page.locator('#finance-count:has-text("2 entries")').waitFor();
   await page.close();
@@ -609,7 +705,7 @@ try {
   assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "finance").length, 2,
     "reopening must not duplicate finance rows");
   assert.equal((await storedRows(page, "animals")).length, 2);
-  assert.equal((await storedRows(page, "sync_queue")).length, 7);
+  assert.equal((await storedRows(page, "sync_queue")).length, 9);
   await page.locator("#account-actions summary").click();
   await page.locator("#auth-sign-out").click();
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
@@ -618,6 +714,7 @@ try {
   assert.equal(await page.locator("body").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false,
     "signed-out DOM must not retain the claimed animal code");
   assert.equal(await page.locator("#milk-checklist").textContent(), "");
+  assert.equal(await page.locator("#milk-correction-history").textContent(), "");
   assert.equal(await page.locator("#finance-list").textContent(), "");
   assert.equal(await page.locator("body").textContent().then((text) => text.includes("TEST FINANCE INCOME")), false);
   assert.equal(await page.locator("body").textContent().then((text) => text.includes(animalCode)), false);

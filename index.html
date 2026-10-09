@@ -172,7 +172,9 @@
             <div class="field full"><button class="primary" type="submit">Save milk record</button></div>
           </div>
         </form>
-        <div class="card"><h2 id="milk-checklist-heading">Morning records</h2><p id="milk-checklist-summary" class="muted">Loading local records…</p><div id="milk-checklist" class="animal-list"></div><p class="muted">A normal save permits one entry per cow and session. Use “Additional collection” only for a genuinely separate collection. Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday–Friday period.</p></div>
+        <div class="card"><h2 id="milk-checklist-heading">Morning records</h2><p id="milk-checklist-summary" class="muted">Loading local records…</p><div id="milk-checklist" class="animal-list"></div>
+          <form id="milk-correction-form" hidden style="margin-top:16px"><h3>Correct milk entry</h3><p id="milk-correction-target" class="muted"></p><input id="milk-correction-id" type="hidden"><div class="form-grid"><div class="field"><label for="milk-correction-action">Action</label><select id="milk-correction-action"><option value="correct">Replace quantity</option><option value="void">Void entry</option></select></div><div id="milk-correction-liters-field" class="field"><label for="milk-correction-liters">Replacement litres</label><input id="milk-correction-liters" type="number" min="0.001" max="60" step="0.001"></div><div class="field full"><label for="milk-correction-reason">Reason</label><textarea id="milk-correction-reason" maxlength="240" rows="2" required></textarea></div><div class="field full"><button class="primary" type="submit">Record correction</button> <button id="milk-correction-cancel" type="button">Cancel</button></div></div></form>
+          <div id="milk-correction-history" class="feed-list" aria-label="Milk correction history"></div><p class="muted">A normal save permits one entry per cow and session. Corrections preserve the original entry and an audit reason. Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday–Friday period.</p></div>
       </div>
     </section>
 
@@ -302,7 +304,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20261009-01";
+      script.src = "./src/main.js?build=20261010-01";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {

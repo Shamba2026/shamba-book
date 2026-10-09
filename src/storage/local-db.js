@@ -289,6 +289,43 @@ export async function appendMilkRecordAtomically({ record, queueItem, allowAddit
   } finally { db.close(); }
 }
 
+export async function correctMilkRecordAtomically({ farmId, correction, replacementRecord, replacementQueueItem, assertCurrent }) {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(["records", "sync_queue"], "readwrite");
+  const completed = transactionComplete(transaction);
+  try {
+    const recordsStore = transaction.objectStore("records");
+    const queueStore = transaction.objectStore("sync_queue");
+    const target = await requestResult(recordsStore.get(correction.targetRecordId));
+    if (!target || target.farmId !== farmId || target.kind !== "milk") {
+      throw new Error("Milk entry is not available in the active farm.");
+    }
+    const animalRecords = await requestResult(recordsStore.index("animalId").getAll(target.animalId));
+    if (animalRecords.some((row) => row.kind === "milk_correction" && row.targetRecordId === target.id)) {
+      throw new Error("Milk entry was already corrected.");
+    }
+    const targetQueue = await requestResult(queueStore.get(target.id));
+    if (!targetQueue || targetQueue.farmId !== farmId || targetQueue.recordType !== "milk" ||
+        !["pending", "failed"].includes(targetQueue.status)) {
+      throw new Error("This milk entry may already have reached the cloud and cannot be corrected locally.");
+    }
+    assertCurrent();
+    recordsStore.put(correction);
+    queueStore.put({ ...targetQueue, status: "superseded", supersededBy: correction.id,
+      updatedAt: correction.createdAt });
+    if (replacementRecord) {
+      recordsStore.put(replacementRecord);
+      queueStore.put(replacementQueueItem);
+    }
+    await completed;
+    return correction;
+  } catch (error) {
+    try { transaction.abort(); } catch { /* Transaction may already have completed. */ }
+    await completed.catch(() => {});
+    throw error;
+  } finally { db.close(); }
+}
+
 // Claim one explicitly selected legacy animal and its existing photo/queue as
 // one transaction. Checks run against the rows inside the write transaction.
 // Synchronous snapshot for the transaction's final comparison. Blob bytes are

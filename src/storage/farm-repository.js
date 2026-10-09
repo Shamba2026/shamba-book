@@ -1,4 +1,6 @@
-import { appendInventoryMovementAtomically, appendMilkRecordAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261009-01";
+import { appendInventoryMovementAtomically, appendMilkRecordAtomically, correctMilkRecordAtomically,
+  get, getAll, putAtomically, putMany } from "./local-db.js?build=20261010-01";
+import { effectiveMilkRecords, validateMilkCorrection } from "../domain/milk-ledger.js?build=20261010-01";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
@@ -417,6 +419,33 @@ export async function saveMilkRecord(input) {
     allowAdditionalCollection: input.allowAdditionalCollection === true,
     assertCurrent: () => { if (requireFarm() !== farmId) throw new Error("Farm session changed during save."); } });
   return record;
+}
+
+export async function correctMilkRecord(input) {
+  const validated = validateMilkCorrection(input);
+  const farmId = requireFarm();
+  const target = await get("records", validated.targetRecordId);
+  if (requireFarm() !== farmId) throw new Error("Farm session changed during correction.");
+  if (!target || target.farmId !== farmId || target.kind !== "milk") {
+    throw new Error("Milk entry is not available in the active farm.");
+  }
+  const timestamp = now();
+  const replacementRecord = validated.action === "correct" ? {
+    id: newId(), clientId: newId(), kind: "milk", farmId, animalId: target.animalId,
+    localDate: target.localDate, session: target.session, eventType: "record",
+    volumeMl: validated.replacementVolumeMl, liters: validated.replacementLiters,
+    correctsRecordId: target.id, createdAt: timestamp, updatedAt: timestamp
+  } : null;
+  const correction = {
+    id: newId(), kind: "milk_correction", farmId, animalId: target.animalId,
+    localDate: target.localDate, session: target.session, action: validated.action,
+    targetRecordId: target.id, replacementRecordId: replacementRecord?.id || null,
+    reason: validated.reason, actorUserId: validated.actorUserId, createdAt: timestamp
+  };
+  await correctMilkRecordAtomically({ farmId, correction, replacementRecord,
+    replacementQueueItem: replacementRecord ? queuedRecord(replacementRecord) : null,
+    assertCurrent: () => { if (requireFarm() !== farmId) throw new Error("Farm session changed during correction."); } });
+  return correction;
 }
 
 export async function saveWeightRecord(input) {
@@ -839,7 +868,7 @@ export async function getPendingSyncCount() {
 
 export async function getTodayMilkSummary(localDate) {
   const records = farmRows(await getAll("records"));
-  const milk = records.filter((r) => r.kind === "milk" && r.localDate === localDate);
+  const milk = effectiveMilkRecords(records).filter((r) => r.localDate === localDate);
   const bySession = Object.fromEntries(["morning", "afternoon", "evening"].map((session) => [
     session,
     milk.filter((row) => row.session === session)
@@ -853,7 +882,12 @@ export async function getTodayMilkSummary(localDate) {
 
 export async function listMilkRecordsForDate(localDate) {
   const records = farmRows(await getAll("records"));
-  return records.filter((record) => record.kind === "milk" && record.localDate === localDate);
+  return effectiveMilkRecords(records).filter((record) => record.localDate === localDate);
+}
+
+export async function listMilkLedgerForDate(localDate) {
+  return farmRows(await getAll("records")).filter((record) =>
+    ["milk", "milk_correction"].includes(record.kind) && record.localDate === localDate);
 }
 
 export async function getHerdSummary() {
