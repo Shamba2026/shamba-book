@@ -51,4 +51,16 @@ assert.equal(
   "each authenticated startup or reload must use the complete readiness gate"
 );
 
+const feedReviewUiTest = await readFile(
+  new URL("./feed-review-ui.browser.test.js", import.meta.url),
+  "utf8"
+);
+assert.match(feedReviewUiTest, /import \{ waitForAuthenticatedApp \} from "\.\/support\/browser-auth-readiness\.js";/);
+assert.doesNotMatch(feedReviewUiTest, /#account-actions:not\(\[hidden\]\).*waitFor/);
+assert.equal(
+  (feedReviewUiTest.match(/await authenticatedAppReady\(/g) || []).length,
+  4,
+  "each authenticated feed-review startup or reload must use the complete readiness gate"
+);
+
 console.log("browser-auth-readiness.test.js: PASS");

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { APP_CONFIG } from "../src/config.js";
+import { waitForAuthenticatedApp } from "./support/browser-auth-readiness.js";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const artifactDir = path.join(root, "test-artifacts");
 const authModule = `
 const key = "feed-review-test-auth"; const listeners = new Set();
 const users = { "feed-review@example.invalid": { id: "feed-review-user", email: "feed-review@example.invalid" }, "outsider@example.invalid": { id: "outsider-user", email: "outsider@example.invalid" } };
@@ -34,14 +36,23 @@ async function rows(page, storeName) {
     try { return await new Promise((resolve, reject) => { const request = db.transaction(name).objectStore(name).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); } finally { db.close(); } }, storeName);
 }
 
+async function authenticatedAppReady(page, artifactName) {
+  return waitForAuthenticatedApp(page, {
+    expectedUserId: "feed-review-user",
+    farmId: APP_CONFIG.cloud.farmId,
+    artifactPath: path.join(artifactDir, artifactName)
+  });
+}
+
 const browser = await chromium.launch({ headless: true }); let context;
 try {
+  await mkdir(artifactDir, { recursive: true });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); const origin = `http://127.0.0.1:${server.address().port}`;
   context = await browser.newContext({ serviceWorkers: "block" }); const page = await context.newPage(); const errors = [];
   page.on("pageerror", (error) => errors.push(error.message)); await page.goto(origin); await page.locator("#auth-sign-in").waitFor();
   assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false); assert.equal(await page.locator("#feed-list").textContent(), "");
   await page.locator("#auth-email").fill("feed-review@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
-  await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click(); await page.locator('[data-view="feeds"]:visible').waitFor();
+  await authenticatedAppReady(page, "feed-review-auth-sign-in-timeout.png"); await page.locator('[data-nav-action="feeds"]').click(); await page.locator('[data-view="feeds"]:visible').waitFor();
   await page.evaluate(async (farmId) => { const db = await new Promise((resolve, reject) => { const request = indexedDB.open("ngombe-herdbook"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     try { await new Promise((resolve, reject) => { const tx = db.transaction("animals", "readwrite"); tx.objectStore("animals").put({ id: "diagnostic-test-animal", farmId, animalCode: "TEST-DIAGNOSTIC-COW", type: "dairy_cow", status: "active" }); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
   assert.match(await page.locator(".feed-hero .feed-safety").textContent(), /not connected to ration or TMR calculations/i);
@@ -121,7 +132,7 @@ try {
   await page.locator("#requirement-approval-confirmed").check(); await page.locator('#requirement-approval-form button[type="submit"]').click();
   await page.locator('#requirement-profile-list:has-text("status: approved")').waitFor();
   assert.match(await page.locator("#diagnostic-current-selection").textContent(), /warnings are inactive/i);
-  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.reload(); await authenticatedAppReady(page, "feed-review-classification-reload-timeout.png");
   await page.locator('[data-nav="animals"]').click(); await page.locator('[data-animal-id="diagnostic-test-animal"]').click();
   await page.locator("#animal-profile:visible").waitFor();
   await page.locator("#classification-date").fill("2026-10-05"); await page.locator("#classification-weight").fill("480");
@@ -178,7 +189,7 @@ try {
   assert.equal((await rows(page, "nutrition_requirement_applicability_reviews")).length, 1);
   assert.equal((await rows(page, "nutrition_requirement_calculations")).length, 1);
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
-  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
+  await page.reload(); await authenticatedAppReady(page, "feed-review-evidence-reload-timeout.png"); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('[data-feed-id]:has-text("TEST feed evidence")').waitFor(); await page.locator('.feed-conflict:has-text("Conflicting Crude protein")').waitFor();
   await page.locator('#feed-inventory-list:has-text("TEST-RECEIPT-001")').waitFor();
   await page.locator('#feed-inventory-list:has-text("100.5 kg remaining")').waitFor(); await page.locator('#feed-current-selections:has-text("Synthetic reviewed laboratory result")').waitFor();
@@ -240,7 +251,7 @@ try {
   assert.equal((await rows(page, "animal_nutrition_classification_reviews")).length, 1);
   assert.equal((await rows(page, "feed_diagnostic_profile_selections")).length, 1, "classification review must not activate another profile");
   assert.equal((await rows(page, "records")).length, 0); assert.equal((await rows(page, "sync_queue")).length, 0);
-  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav="animals"]').click();
+  await page.reload(); await authenticatedAppReady(page, "feed-review-revocation-reload-timeout.png"); await page.locator('[data-nav="animals"]').click();
   await page.locator("#herd-nutrition-readiness").waitFor();
   const herdReadinessText = await page.locator("#herd-nutrition-readiness").textContent();
   assert.match(herdReadinessText, /0 of 1/, "revoked evidence must exclude the retained animal from the complete count");
