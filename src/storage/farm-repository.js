@@ -1,4 +1,4 @@
-import { appendInventoryMovementAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261007-03";
+import { appendInventoryMovementAtomically, appendMilkRecordAtomically, get, getAll, putAtomically, putMany } from "./local-db.js?build=20261009-01";
 import { buildNutritionProfile, validateNutritionObservation, validateNutritionSource } from "../domain/feed/nutrition-profile.js?build=20260928-04";
 import { validateCostSource, validateInventoryBatch, validateInventoryMovement } from "../domain/feed/feed-inventory.js?build=20260928-04";
 import { currentNutritionSelections, validateNutritionSelection } from "../domain/feed/nutrition-selection.js?build=20260928-04";
@@ -397,6 +397,8 @@ export async function listRequirementRationComparisonReviews(animalId = null) {
 
 export async function saveMilkRecord(input) {
   const farmId = await requireAnimal(input.animalId);
+  const volumeMl = Number.isSafeInteger(input.volumeMl) ? input.volumeMl : Math.round(Number(input.liters) * 1000);
+  if (!Number.isSafeInteger(volumeMl) || volumeMl <= 0 || volumeMl > 60000) throw new Error("Enter a milk quantity between 0 and 60 litres.");
   const record = {
     id: newId(),
     clientId: newId(),
@@ -405,14 +407,15 @@ export async function saveMilkRecord(input) {
     animalId: input.animalId,
     localDate: input.localDate,
     session: input.session,
-    liters: Number(input.liters),
+    eventType: "record",
+    volumeMl,
+    liters: volumeMl / 1000,
     createdAt: now(),
     updatedAt: now()
   };
-  await putAtomically([
-    { storeName: "records", value: record },
-    { storeName: "sync_queue", value: queuedRecord(record) }
-  ]);
+  await appendMilkRecordAtomically({ record, queueItem: queuedRecord(record),
+    allowAdditionalCollection: input.allowAdditionalCollection === true,
+    assertCurrent: () => { if (requireFarm() !== farmId) throw new Error("Farm session changed during save."); } });
   return record;
 }
 

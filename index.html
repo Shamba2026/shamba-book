@@ -167,11 +167,12 @@
             <select id="milk-session" aria-label="Selected milking session" hidden><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select>
             <div class="field"><label for="milk-date">Date</label><input id="milk-date" type="date" required></div>
             <div class="field"><label for="milk-liters">Litres</label><input id="milk-liters" type="number" min="0.1" max="60" step="0.1" required></div>
+            <label class="field full"><span><input id="milk-additional" type="checkbox"> Additional collection from the same cow and session</span><small class="muted">Leave clear for the normal once-per-session entry. Select only when milk was collected separately.</small></label>
             <div class="field"><label>Milk value</label><div id="milk-value-preview" style="padding:11px 12px;border:1px solid var(--line);border-radius:12px">—</div></div>
             <div class="field full"><button class="primary" type="submit">Save milk record</button></div>
           </div>
         </form>
-        <div class="card"><h2 id="milk-checklist-heading">Morning records</h2><p id="milk-checklist-summary" class="muted">Loading local records…</p><div id="milk-checklist" class="animal-list"></div><p class="muted">A recorded cow can have multiple entries; review totals before adding another. Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday–Friday period.</p></div>
+        <div class="card"><h2 id="milk-checklist-heading">Morning records</h2><p id="milk-checklist-summary" class="muted">Loading local records…</p><div id="milk-checklist" class="animal-list"></div><p class="muted">A normal save permits one entry per cow and session. Use “Additional collection” only for a genuinely separate collection. Current price: KSh 49/L. Delivery: evening. Weekly payment: Saturday for the preceding Saturday–Friday period.</p></div>
       </div>
     </section>
 
@@ -301,7 +302,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20261007-13";
+      script.src = "./src/main.js?build=20261009-01";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {
