@@ -65,7 +65,11 @@ try { await mkdir(artifactDir, { recursive: true }); await new Promise((resolve)
       selectedAt: "2026-10-06T23:00:00Z", animalGroup: [{ id: "cow-a" }, { id: "cow-b" }],
       classificationEvidence: classifications.map((row) => ({ animalId: row.animalId, classificationId: row.id,
         reviewId: "review-" + row.animalId })) };
-    const requirementProfile = { id: "requirement-profile", farmId, version: 1, status: "approved" };
+    const requirementProfile = { id: "requirement-profile", farmId, name: "TEST requirement profile", version: 1,
+      animalClass: "LACTATING_DAIRY_COW", applicability: "Synthetic UI evidence only.", nutrientSystem: "TEST SYSTEM",
+      sourceTitle: "Synthetic requirement source", sourceCitation: "TEST-REQUIREMENT-UI", status: "approved",
+      equations: [{ outputCode: "DMI_KG_DAY", outputUnit: "kg DM/day", equationReference: "Synthetic UI equation",
+        terms: [{ factor: "CONSTANT", coefficient: 6, exponent: 0 }] }] };
     const stores = ["feed_diagnostic_warning_events", "animals", "nutrition_requirement_calculations",
       "animal_nutrition_classifications", "animal_nutrition_classification_reviews", "feed_diagnostic_profiles",
       "feed_diagnostic_profile_selections", "nutrition_requirement_profiles"];
