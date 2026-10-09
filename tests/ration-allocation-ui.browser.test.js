@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { APP_CONFIG } from "../src/config.js";
+import { waitForAuthenticatedApp } from "./support/browser-auth-readiness.js";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const artifactDir = path.join(root, "test-artifacts");
 const authModule = `
 const key = "allocation-ui-auth"; const listeners = new Set(); const user = { id: "allocation-reviewer", email: "allocation@example.invalid" };
 const session = () => localStorage.getItem(key) ? { user } : null;
@@ -26,11 +28,16 @@ const server = createServer(async (request, response) => { const pathname = new 
 async function rows(page, storeName) { return page.evaluate(async (name) => { const db = await new Promise((resolve, reject) => { const request = indexedDB.open("ngombe-herdbook"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
   try { return await new Promise((resolve, reject) => { const request = db.transaction(name).objectStore(name).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); } finally { db.close(); } }, storeName); }
 
+async function authenticatedAppReady(page, artifactName) { return waitForAuthenticatedApp(page, {
+  expectedUserId: "allocation-reviewer", farmId: APP_CONFIG.cloud.farmId,
+  artifactPath: path.join(artifactDir, artifactName)
+}); }
+
 const browser = await chromium.launch({ headless: true }); let context;
-try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); context = await browser.newContext({ serviceWorkers: "block" });
+try { await mkdir(artifactDir, { recursive: true }); await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); context = await browser.newContext({ serviceWorkers: "block" });
   const page = await context.newPage(); const errors = []; page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator("#auth-email").fill("allocation@example.invalid");
-  await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click(); await page.locator("#account-actions:not([hidden])").waitFor();
+  await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click(); await authenticatedAppReady(page, "ration-allocation-auth-sign-in-timeout.png");
   await page.evaluate(async (farmId) => { const db = await new Promise((resolve, reject) => { const request = indexedDB.open("ngombe-herdbook"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     const review = { id: "group-ration-ui", farmId, profileId: "profile-ui", profileName: "TEST allocation profile", profileVersion: 1,
       animalClass: "LACTATING_DAIRY_COW", sourceCitation: "TEST-ALLOCATION-UI",
@@ -68,7 +75,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
       classificationReviews.forEach((row) => tx.objectStore("animal_nutrition_classification_reviews").put(row));
       tx.objectStore("feed_diagnostic_profiles").put(diagnosticProfile); tx.objectStore("feed_diagnostic_profile_selections").put(diagnosticSelection);
       tx.objectStore("nutrition_requirement_profiles").put(requirementProfile); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); } finally { db.close(); } }, APP_CONFIG.cloud.farmId);
-  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
+  await page.reload(); await authenticatedAppReady(page, "ration-allocation-first-reload-timeout.png"); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator("#ration-allocation-form:visible").waitFor(); await page.locator("#ration-allocation-review").selectOption("group-ration-ui");
   await page.locator('[data-allocation-animal="cow-a"][data-allocation-feed="silage"]').fill("12");
   await page.locator('[data-allocation-animal="cow-a"][data-allocation-feed="meal"]').fill("2.5");
@@ -86,7 +93,7 @@ try { await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); co
   await page.locator('#requirement-ration-comparison-form button[type="submit"]').click();
   await page.locator('#requirement-ration-comparison-result:has-text("allocation review")').waitFor();
   assert.match(await page.locator("#requirement-ration-comparison-result").textContent(), /ration evidence: 5.85 kg DM\/day/);
-  await page.reload(); await page.locator("#account-actions:not([hidden])").waitFor(); await page.locator('[data-nav-action="feeds"]').click();
+  await page.reload(); await authenticatedAppReady(page, "ration-allocation-second-reload-timeout.png"); await page.locator('[data-nav-action="feeds"]').click();
   await page.locator('#ration-allocation-list:has-text("Synthetic documented weighing evidence")').waitFor();
   await page.locator("#account-actions summary").click(); await page.locator("#auth-sign-out").click(); await page.locator("#auth-sign-in").waitFor();
   assert.equal(await page.locator("#ration-allocation-list").textContent(), ""); assert.equal(await page.locator("#ration-allocation-form").isVisible(), false);
