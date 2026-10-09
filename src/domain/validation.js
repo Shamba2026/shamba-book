@@ -31,7 +31,8 @@ export function validateAnimal(input) {
 }
 
 export function validateMilk(input) {
-  const liters = Number(input.liters);
+  const rawLiters = String(input.liters ?? "").trim();
+  const liters = Number(rawLiters);
   if (!input.animalId) throw new Error("Select an animal.");
   if (!["morning", "afternoon", "evening"].includes(input.session)) {
     throw new Error("Select a valid milking session.");
@@ -39,11 +40,17 @@ export function validateMilk(input) {
   if (!Number.isFinite(liters) || liters <= 0 || liters > 60) {
     throw new Error("Enter a milk quantity between 0 and 60 litres.");
   }
+  if (!/^\d{1,2}(?:\.\d{1,3})?$/.test(rawLiters)) {
+    throw new Error("Enter milk to no more than three decimal places.");
+  }
+  const volumeMl = Math.round(liters * 1000);
   return {
     animalId: input.animalId,
     session: input.session,
-    liters,
-    localDate: input.localDate
+    liters: volumeMl / 1000,
+    volumeMl,
+    localDate: input.localDate,
+    allowAdditionalCollection: input.allowAdditionalCollection === true
   };
 }
 

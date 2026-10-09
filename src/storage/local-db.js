@@ -264,6 +264,31 @@ export async function putAtomically(entries) {
   }
 }
 
+export async function appendMilkRecordAtomically({ record, queueItem, allowAdditionalCollection, assertCurrent }) {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(["animals", "records", "sync_queue"], "readwrite");
+  const completed = transactionComplete(transaction);
+  try {
+    const animal = await requestResult(transaction.objectStore("animals").get(record.animalId));
+    if (!animal || animal.farmId !== record.farmId) throw new Error("Animal is not in the active farm.");
+    const records = await requestResult(transaction.objectStore("records").index("animalId").getAll(record.animalId));
+    const duplicate = records.some((row) => row.farmId === record.farmId && row.kind === "milk" &&
+      row.localDate === record.localDate && row.session === record.session && row.eventType !== "void");
+    if (duplicate && !allowAdditionalCollection) {
+      throw new Error("Milk is already recorded for this cow and session. Select additional collection only when this is a separate milking.");
+    }
+    assertCurrent();
+    transaction.objectStore("records").put(record);
+    transaction.objectStore("sync_queue").put(queueItem);
+    await completed;
+    return record;
+  } catch (error) {
+    try { transaction.abort(); } catch { /* Transaction may already have completed. */ }
+    await completed.catch(() => {});
+    throw error;
+  } finally { db.close(); }
+}
+
 // Claim one explicitly selected legacy animal and its existing photo/queue as
 // one transaction. Checks run against the rows inside the write transaction.
 // Synchronous snapshot for the transaction's final comparison. Blob bytes are

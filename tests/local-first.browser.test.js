@@ -383,8 +383,37 @@ try {
   await page.locator("#milk-liters").fill("2.5");
   await page.locator('#milk-form button[type="submit"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist")?.textContent.includes("1 recorded"));
-  assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening").length, 1);
+  let eveningRows = (await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening");
+  assert.equal(eveningRows.length, 1);
+  assert.equal(eveningRows[0].volumeMl, 2500, "milk volume must be stored as integer millilitres");
   assert.equal((await storedRows(page, "sync_queue")).length, 2);
+
+  await page.locator("#milk-animal").selectOption(id);
+  await page.locator("#milk-liters").fill("2.5");
+  await page.locator('#milk-form button[type="submit"]').click();
+  await page.locator('#app-status:has-text("already recorded")').waitFor();
+  eveningRows = (await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening");
+  assert.equal(eveningRows.length, 1, "an ordinary duplicate submission must not create another record");
+  assert.equal((await storedRows(page, "sync_queue")).length, 2, "a rejected duplicate must not create a queue entry");
+
+  await page.locator("#milk-additional").check();
+  await page.locator('#milk-form button[type="submit"]').click();
+  await page.locator('#app-status:has-text("Milk saved locally")').waitFor();
+  eveningRows = (await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "evening");
+  assert.equal(eveningRows.length, 2, "an explicitly confirmed separate collection must be retained");
+  assert.equal((await storedRows(page, "sync_queue")).length, 3);
+
+  const concurrentResult = await page.evaluate(async ({ animalId, farmId }) => {
+    const repository = await import("/src/storage/farm-repository.js?build=20261009-01");
+    repository.setActiveFarm(farmId);
+    const input = { animalId, localDate: "2026-09-21", session: "afternoon", liters: 1.75, volumeMl: 1750 };
+    const results = await Promise.allSettled([repository.saveMilkRecord(input), repository.saveMilkRecord(input)]);
+    return results.map((result) => result.status);
+  }, { animalId: id, farmId: APP_CONFIG.cloud.farmId });
+  assert.deepEqual(concurrentResult.sort(), ["fulfilled", "rejected"],
+    "the atomic store guard must permit only one concurrent normal save");
+  assert.equal((await storedRows(page, "records")).filter((row) => row.kind === "milk" && row.session === "afternoon").length, 1);
+  assert.equal((await storedRows(page, "sync_queue")).length, 4);
   await page.locator('[data-milk-session="morning"]').click();
   await page.waitForFunction(() => document.querySelector("#milk-checklist-summary")?.textContent.includes("no morning record"));
   await page.evaluate(async () => {
@@ -407,7 +436,7 @@ try {
   await page.reload();
   await authenticatedAppReady(page, "isolated-test-user");
   await page.locator('button[data-nav="animals"]').click();
-  await page.waitForFunction(() => document.querySelector("#sync-count")?.textContent === "2");
+  await page.waitForFunction(() => document.querySelector("#sync-count")?.textContent === "4");
   assert.equal(await page.locator("#animal-list").textContent().then((text) => text.includes("TEST-UNOWNED-LEGACY")), false);
   assert.equal((await storedRows(page, "animals")).some((row) => row.id === "TEST-LEGACY-ID"), true);
   assert.equal((await storedRows(page, "attachments")).some((row) => row.id === "TEST-LEGACY-PHOTO"), true);

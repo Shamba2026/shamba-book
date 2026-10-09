@@ -1,8 +1,8 @@
 import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
-import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20260922-04";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261007-10";
+import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20261009-01";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261009-01";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
@@ -1176,14 +1176,18 @@ async function handleAnimalSubmit(event) {
 async function handleMilkSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton.disabled) return;
   const generation = accessGeneration;
+  submitButton.disabled = true;
 
   try {
     const input = validateMilk({
       animalId: $("#milk-animal").value,
       session: $("#milk-session").value,
       liters: $("#milk-liters").value,
-      localDate: $("#milk-date").value || toLocalDateString()
+      localDate: $("#milk-date").value || toLocalDateString(),
+      allowAdditionalCollection: $("#milk-additional").checked
     });
 
     await FarmRepository.saveMilkRecord(input);
@@ -1199,6 +1203,8 @@ async function handleMilkSubmit(event) {
     showView("milk");
   } catch (error) {
     setStatus(error.message, "error");
+  } finally {
+    submitButton.disabled = false;
   }
 }
 
