@@ -80,9 +80,14 @@ try {
     new Promise((_, reject) => setTimeout(() => reject(new Error("No active shell worker")), 5000))
   ])), true);
   assert.equal(await page.evaluate(async () => {
-    const cache = await caches.open("ngombe-herdbook-static-20261010-02");
+    const cache = await caches.open("ngombe-herdbook-static-20261010-03");
     return Boolean(await cache.match("./styles/app.css?build=20261010-02"));
   }), true, "the separately reviewed landing stylesheet must be available to the offline shell");
+  assert.equal(await page.evaluate(async () => {
+    const cache = await caches.open("ngombe-herdbook-static-20261010-03");
+    const response = await cache.match("./manifest.json?v=15");
+    return response?.ok && (await response.json()).name === "Ngombe Herdbook";
+  }), true, "the exact manifest URL requested by the page must be cached");
   await page.locator("#auth-email").fill("offline@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();

@@ -1,8 +1,8 @@
 // Versioned app shell only. Farm data stays in IndexedDB; auth/API responses are never cached.
-const CACHE_NAME = "ngombe-herdbook-static-20261010-02";
+const CACHE_NAME = "ngombe-herdbook-static-20261010-03";
 const PREFIX = "ngombe-herdbook-";
 const ASSETS = [
-  "./index.html", "./manifest.json", "./styles/app.css?build=20261009-01",
+  "./index.html", "./manifest.json?v=15", "./styles/app.css?build=20261009-01",
   "./styles/app.css?build=20261010-02", "./assets/vendor/supabase-2.117.3.js",
   "./src/main.js?build=20261010-03", "./src/ui.js?build=20261010-03",
   "./src/auth.js?build=20261010-03", "./src/config.js?build=20261010-03", "./src/farm-access.js", "./src/farm-access.js?build=20261010-03",

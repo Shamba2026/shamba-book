@@ -2,7 +2,7 @@ name: Local-first browser regression
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, fix/offline-auth-client]
   push:
     branches: [main]
 
