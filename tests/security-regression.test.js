@@ -1,12 +1,36 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { scanClientFiles } from "./support/client-secret-guard.js";
 import { toCloudPayload } from "../src/cloud/supabase-adapter.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const findings = await scanClientFiles(root);
 assert.deepEqual(findings, [], `deployable client files contain forbidden credentials:\n${findings.join("\n")}`);
+
+// Synthetic fixtures prove that the guard fails on privileged credentials while
+// accepting a public anon key. These files never enter the deployed tree.
+const fixtureRoot = await mkdtemp(path.join(tmpdir(), "ngombe-secret-fixture-"));
+try {
+  const fakeToken = (role) => ["eyJhbGciOiJIUzI1NiJ9",
+    Buffer.from(JSON.stringify({ role })).toString("base64url"), "c2lnbmF0dXJl"].join(".");
+  await writeFile(path.join(fixtureRoot, "config.js"), `const key = "${fakeToken("anon")}";`);
+  assert.deepEqual(await scanClientFiles(fixtureRoot), [], "public anon token is allowed");
+  await writeFile(path.join(fixtureRoot, "config.js"), `const key = "${fakeToken("service_role")}";`);
+  assert.match((await scanClientFiles(fixtureRoot)).join("\n"), /config\.js: embedded service_role JWT/);
+  await writeFile(path.join(fixtureRoot, "config.js"), 'const service_role_key = "TEST-ONLY-SECRET";');
+  assert.match((await scanClientFiles(fixtureRoot)).join("\n"), /config\.js: privileged credential assignment/);
+  await writeFile(path.join(fixtureRoot, "config.js"), 'const key = "-----BEGIN PRIVATE KEY-----";');
+  assert.match((await scanClientFiles(fixtureRoot)).join("\n"), /config\.js: embedded private key/);
+  await mkdir(path.join(fixtureRoot, "tests"));
+  await writeFile(path.join(fixtureRoot, "tests", "fixture.js"), 'const service_role_key = "TEST-ONLY-SECRET";');
+  await writeFile(path.join(fixtureRoot, "config.js"), "const safe = true;");
+  assert.deepEqual(await scanClientFiles(fixtureRoot), [], "test-only fixtures are excluded from the client scan");
+} finally {
+  await rm(fixtureRoot, { recursive: true, force: true });
+}
 
 const hostileFields = {
   farmId: "attacker-farm", farm_id: "attacker-farm",
