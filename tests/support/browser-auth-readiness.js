@@ -14,7 +14,7 @@ export async function collectAuthReadiness(page, { expectedUserId, farmId }) {
   const snapshot = await page.evaluate(async ({ expectedUserId: userId, farmId: configuredFarmId }) => {
     const visible = (element) => Boolean(element && !element.hidden && getComputedStyle(element).display !== "none" &&
       getComputedStyle(element).visibility !== "hidden");
-    const { getAuthClient } = await import("/src/auth.js");
+    const { getAuthClient } = await import("/src/auth.js?build=20261010-03");
     const { data } = await (await getAuthClient()).auth.getSession();
     const sessionUserId = data?.session?.user?.id || null;
     const membershipVerified = await new Promise((resolve) => {

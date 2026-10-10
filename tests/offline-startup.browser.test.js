@@ -80,7 +80,7 @@ try {
     new Promise((_, reject) => setTimeout(() => reject(new Error("No active shell worker")), 5000))
   ])), true);
   assert.equal(await page.evaluate(async () => {
-    const cache = await caches.open("ngombe-herdbook-static-20261010-01");
+    const cache = await caches.open("ngombe-herdbook-static-20261010-02");
     return Boolean(await cache.match("./styles/app.css?build=20261010-02"));
   }), true, "the separately reviewed landing stylesheet must be available to the offline shell");
   await page.locator("#auth-email").fill("offline@example.invalid");

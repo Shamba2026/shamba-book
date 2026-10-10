@@ -1,4 +1,4 @@
-import { APP_CONFIG } from "./config.js";
+import { APP_CONFIG } from "./config.js?build=20261010-03";
 
 let clientPromise = null;
 
@@ -7,17 +7,20 @@ async function loadClient() {
     throw new Error("Supabase authentication is not configured.");
   }
 
+  if (clientPromise) return clientPromise;
+
   if (window.supabase?.createClient) {
-    return window.supabase.createClient(
+    clientPromise = Promise.resolve(window.supabase.createClient(
       APP_CONFIG.cloud.supabaseUrl,
       APP_CONFIG.cloud.supabaseAnonKey
-    );
+    ));
+    return clientPromise;
   }
 
   if (!clientPromise) {
     clientPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = APP_CONFIG.cloud.supabaseJsCdn;
+      script.src = APP_CONFIG.cloud.supabaseJsBundle;
       const timeout = window.setTimeout(() => reject(new Error("Timed out loading the Supabase client.")), 10000);
 
       script.onload = () => {
