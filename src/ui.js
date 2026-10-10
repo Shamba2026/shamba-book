@@ -1361,6 +1361,7 @@ async function initAuth() {
   statusEl.setAttribute("aria-atomic", "true");
 
   let clientPromise = null;
+  let authRevision = 0;
   let claimController = null;
   let claimBusy = false;
   const getClient = () => {
@@ -1518,6 +1519,7 @@ async function initAuth() {
 
   signInButton.addEventListener("click", async () => {
     try {
+      authRevision += 1;
       signInButton.disabled = true;
       statusEl.textContent = "Connecting to sign-in service…";
       const email = emailEl.value.trim();
@@ -1537,6 +1539,7 @@ async function initAuth() {
 
   signOutButton.addEventListener("click", async () => {
     try {
+      authRevision += 1;
       const client = await getClient();
       const { error } = await client.auth.signOut();
       if (error) throw error;
@@ -1548,8 +1551,10 @@ async function initAuth() {
   });
 
   const refreshAuthState = async () => {
+    const revision = authRevision;
     const client = await getClient();
     const { data, error } = await client.auth.getSession();
+    if (revision !== authRevision) return;
     if (error) throw error;
     const user = data?.session?.user || null;
     if (user) await activateUser(user, client);
@@ -1558,6 +1563,7 @@ async function initAuth() {
 
   getClient().then(async (client) => {
     client.auth.onAuthStateChange((_event, session) => {
+      authRevision += 1;
       if (session?.user) activateUser(session.user, client).catch((error) => setStatus(error.message, "error"));
       else setSignedOut();
     });
