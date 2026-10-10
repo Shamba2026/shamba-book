@@ -3,6 +3,7 @@ const CACHE_NAME = "ngombe-herdbook-static-20261010-01";
 const PREFIX = "ngombe-herdbook-";
 const ASSETS = [
   "./index.html", "./manifest.json", "./styles/app.css?build=20261009-01",
+  "./styles/app.css?build=20261010-02",
   "./src/main.js?build=20261010-01", "./src/ui.js?build=20261010-01",
   "./src/auth.js", "./src/config.js", "./src/farm-access.js", "./src/farm-access.js?build=20260927-02",
   "./src/cloud/supabase-adapter.js?build=20260927-02",
