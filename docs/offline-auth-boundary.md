@@ -10,6 +10,8 @@ An offline farm view requires both a session returned by the pinned client and m
 
 The browser suite uses the real pinned client with synthetic token and membership responses. It proves an offline reopen while the synthetic token is unexpired, and refusal when membership evidence is stale. It does **not** prove behavior after token expiry, server-side revocation, a stolen unlocked device, or a real Supabase outage. Those remain separate release decisions. Cloud synchronization and Restore stay disabled.
 
+The client loader reuses one SDK client per page. A failing singleton test and a real-client browser trace showed repeated client initialization broadcasting `SIGNED_IN` and repeatedly resetting farm access during readiness checks.
+
 The sign-in button remains disabled until its handler is attached. Session reads use a revision guard so a stale startup read cannot overwrite a newer explicit sign-in or sign-out. The isolated race test delays startup and then releases an empty session read after sign-in. Startup module URLs are versioned as `20261010-03`.
 
 Existing tabs may retain the previous service worker until closed; an online visit and new tab are needed to install the new cache. The shell does not cache auth/API responses.

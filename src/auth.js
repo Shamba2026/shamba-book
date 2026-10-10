@@ -7,11 +7,14 @@ async function loadClient() {
     throw new Error("Supabase authentication is not configured.");
   }
 
+  if (clientPromise) return clientPromise;
+
   if (window.supabase?.createClient) {
-    return window.supabase.createClient(
+    clientPromise = Promise.resolve(window.supabase.createClient(
       APP_CONFIG.cloud.supabaseUrl,
       APP_CONFIG.cloud.supabaseAnonKey
-    );
+    ));
+    return clientPromise;
   }
 
   if (!clientPromise) {
