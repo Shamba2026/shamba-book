@@ -89,7 +89,7 @@ try {
   assert.deepEqual(externalRequests, [], "synthetic session must not reach any external endpoint");
 
   // The shell must load on a second offline tab, but this test does not authorize
-  // an offline farm session. The cached original auth module cannot use its CDN.
+  // an offline farm session. The synthetic auth module refuses offline access.
   await context.setOffline(true);
   const reopened = await context.newPage();
   await reopened.goto(origin, { waitUntil: "domcontentloaded", timeout: 5000 });

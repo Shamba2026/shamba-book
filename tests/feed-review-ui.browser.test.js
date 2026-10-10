@@ -15,7 +15,7 @@ const users = { "feed-review@example.invalid": { id: "feed-review-user", email: 
 const session = () => { const email = localStorage.getItem(key); return email ? { user: users[email] } : null; };
 const auth = {
   onAuthStateChange(callback) { listeners.add(callback); return { data: { subscription: { unsubscribe() {} } } }; },
-  async getSession() { return { data: { session: session() }, error: null }; },
+  async getSession() { localStorage.setItem("feed-review-session-checked", "1"); return { data: { session: session() }, error: null }; },
   async signInWithPassword({ email, password }) { if (!users[email] || password !== "TEST-ONLY") return { error: new Error("Rejected") }; localStorage.setItem(key, email); listeners.forEach((callback) => callback("SIGNED_IN", session())); return { error: null }; },
   async signOut() { localStorage.removeItem(key); listeners.forEach((callback) => callback("SIGNED_OUT", null)); return { error: null }; }
 };
@@ -50,6 +50,8 @@ try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); const origin = `http://127.0.0.1:${server.address().port}`;
   context = await browser.newContext({ serviceWorkers: "block" }); const page = await context.newPage(); const errors = [];
   page.on("pageerror", (error) => errors.push(error.message)); await page.goto(origin); await page.locator("#auth-sign-in").waitFor();
+  await page.waitForFunction(() => localStorage.getItem("feed-review-session-checked") === "1" &&
+    document.querySelector("#auth-status")?.textContent?.includes("Not signed in"));
   assert.equal(await page.locator('[data-view="feeds"]').isVisible(), false); assert.equal(await page.locator("#feed-list").textContent(), "");
   await page.locator("#auth-email").fill("feed-review@example.invalid"); await page.locator("#auth-password").fill("TEST-ONLY"); await page.locator("#auth-sign-in").click();
   await authenticatedAppReady(page, "feed-review-auth-sign-in-timeout.png"); await page.locator('[data-nav-action="feeds"]').click(); await page.locator('[data-view="feeds"]:visible').waitFor();
