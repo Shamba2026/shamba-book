@@ -19,7 +19,7 @@ export async function ensureClient() {
   if (!clientPromise) {
     clientPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = APP_CONFIG.cloud.supabaseJsCdn;
+      script.src = APP_CONFIG.cloud.supabaseJsBundle;
       script.onload = () => {
         if (!window.supabase || !window.supabase.createClient) {
           reject(new Error("Supabase client loaded but createClient is unavailable."));

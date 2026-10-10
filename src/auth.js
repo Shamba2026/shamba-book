@@ -17,7 +17,7 @@ async function loadClient() {
   if (!clientPromise) {
     clientPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = APP_CONFIG.cloud.supabaseJsCdn;
+      script.src = APP_CONFIG.cloud.supabaseJsBundle;
       const timeout = window.setTimeout(() => reject(new Error("Timed out loading the Supabase client.")), 10000);
 
       script.onload = () => {
