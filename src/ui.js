@@ -2,7 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20261009-01";
-import * as FarmRepository from "./storage/farm-repository.js?build=20261009-01";
+import * as FarmRepository from "./storage/farm-repository.js?build=20261010-01";
 import { unitCostPerKg } from "./domain/feed/feed-inventory.js?build=20260928-01";
 import { buildReadOnlyRation } from "./domain/feed/ration-contract.js?build=20261005-02";
 import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=20261005-03";
@@ -26,6 +26,7 @@ let comparisonRationReviews = [];
 let currentComparisonEvidence = null;
 let comparisonReviewHistory = [];
 let allocationRationReviews = [];
+let selectedMilkCorrectionId = null;
 
 function clearFarmView() {
   feedRefreshGeneration += 1;
@@ -35,12 +36,17 @@ function clearFarmView() {
     "#diagnostic-selection-form", "#diagnostic-archive-form", "#animal-nutrition-classification-form",
     "#animal-nutrition-review-form", "#requirement-profile-form", "#requirement-approval-form",
     "#requirement-revocation-form", "#requirement-applicability-form", "#requirement-calculation-form",
-    "#requirement-ration-comparison-form", "#requirement-ration-review-form", "#ration-allocation-form"].forEach((selector) => {
+    "#requirement-ration-comparison-form", "#requirement-ration-review-form", "#ration-allocation-form",
+    "#milk-correction-form"].forEach((selector) => {
     $(selector).reset();
   });
   $("#milk-value-preview").textContent = "—";
   $("#milk-checklist").replaceChildren();
   $("#milk-checklist-summary").textContent = "";
+  $("#milk-correction-history").replaceChildren();
+  $("#milk-correction-form").hidden = true;
+  $("#milk-correction-target").textContent = "";
+  selectedMilkCorrectionId = null;
   $("#animal-list").replaceChildren();
   $("#animals-empty").hidden = false;
   const herdNutrition = $("#herd-nutrition-readiness");
@@ -1039,17 +1045,69 @@ async function refreshMilkChecklist(generation = accessGeneration) {
   if (!canShowFarmData(generation)) return;
   const date = $("#milk-date").value || toLocalDateString();
   const session = $("#milk-session").value;
-  const [animals, records] = await Promise.all([
-    FarmRepository.listAnimals(), FarmRepository.listMilkRecordsForDate(date)
+  const [animals, records, ledger] = await Promise.all([
+    FarmRepository.listAnimals(), FarmRepository.listMilkRecordsForDate(date), FarmRepository.listMilkLedgerForDate(date)
   ]);
   if (!canShowFarmData(generation) || date !== $("#milk-date").value || session !== $("#milk-session").value) return;
   const cows = animals.filter((a) => a.type === "dairy_cow" && a.status === "active");
+  const sessionRecords = records.filter((row) => row.session === session);
   const counts = new Map();
-  records.filter((row) => row.session === session).forEach((row) => counts.set(row.animalId, (counts.get(row.animalId) || 0) + 1));
+  sessionRecords.forEach((row) => counts.set(row.animalId, (counts.get(row.animalId) || 0) + 1));
   const missing = cows.filter((cow) => !counts.has(cow.id)).length;
   $("#milk-checklist-summary").textContent = date + ": " + missing + " of " + cows.length + " active dairy cows have no " + session + " record.";
-  $("#milk-checklist").innerHTML = cows.map((cow) => '<div class="session-row"><span>' + escapeHtml(cow.animalCode) + '</span><strong>' +
-    (counts.has(cow.id) ? counts.get(cow.id) + ' recorded' : 'No record') + '</strong></div>').join("");
+  $("#milk-checklist").innerHTML = cows.map((cow) => {
+    const entries = sessionRecords.filter((row) => row.animalId === cow.id);
+    return '<div class="session-row"><span>' + escapeHtml(cow.animalCode) + '</span><strong>' +
+      (entries.length ? entries.length + ' recorded' : 'No record') + '</strong></div>' + entries.map((row) =>
+        '<div class="session-row"><span>' + escapeHtml(Number(row.liters || 0).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')) +
+        ' L</span><span><button type="button" data-milk-correction-id="' + escapeHtml(row.id) +
+        '" data-milk-correction-action="correct">Correct</button> <button type="button" data-milk-correction-id="' +
+        escapeHtml(row.id) + '" data-milk-correction-action="void">Void</button></span></div>').join("");
+  }).join("");
+  const corrections = ledger.filter((row) => row.kind === "milk_correction" && row.session === session)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  $("#milk-correction-history").innerHTML = corrections.map((row) => '<div class="session-row"><span>' +
+    escapeHtml(row.action === "void" ? "Voided entry" : "Corrected entry") + '</span><span>' +
+    escapeHtml(row.reason) + '</span></div>').join("");
+}
+
+function openMilkCorrection(recordId, action) {
+  selectedMilkCorrectionId = recordId;
+  $("#milk-correction-id").value = recordId;
+  $("#milk-correction-action").value = action;
+  $("#milk-correction-target").textContent = action === "void" ? "Void this entry without deleting its history." :
+    "Replace this quantity while preserving its history.";
+  $("#milk-correction-form").hidden = false;
+  updateMilkCorrectionFields();
+}
+
+function updateMilkCorrectionFields() {
+  const correcting = $("#milk-correction-action").value === "correct";
+  $("#milk-correction-liters-field").hidden = !correcting;
+  $("#milk-correction-liters").required = correcting;
+  if (!correcting) $("#milk-correction-liters").value = "";
+}
+
+function closeMilkCorrection() {
+  $("#milk-correction-form").reset();
+  $("#milk-correction-form").hidden = true;
+  $("#milk-correction-target").textContent = "";
+  selectedMilkCorrectionId = null;
+}
+
+async function handleMilkCorrectionSubmit(event) {
+  event.preventDefault();
+  const generation = accessGeneration;
+  if (!selectedMilkCorrectionId || !activeUserId) return setStatus("Authenticated milk correction is unavailable.", "error");
+  try {
+    await FarmRepository.correctMilkRecord({ targetRecordId: selectedMilkCorrectionId,
+      action: $("#milk-correction-action").value, reason: $("#milk-correction-reason").value,
+      replacementLiters: $("#milk-correction-liters").value, actorUserId: activeUserId });
+    if (!canShowFarmData(generation)) return;
+    closeMilkCorrection();
+    await Promise.all([refreshDashboard(), refreshMilkChecklist(generation)]);
+    if (canShowFarmData(generation)) setStatus("Milk correction recorded. The original entry remains in the audit history.", "success");
+  } catch (error) { if (canShowFarmData(generation)) setStatus(error.message || String(error), "error"); }
 }
 
 function selectMilkSession(session) {
@@ -1581,6 +1639,13 @@ export async function initApp() {
 
   $("#animal-form").addEventListener("submit", handleAnimalSubmit);
   $("#milk-form").addEventListener("submit", handleMilkSubmit);
+  $("#milk-correction-form").addEventListener("submit", handleMilkCorrectionSubmit);
+  $("#milk-correction-action").addEventListener("change", updateMilkCorrectionFields);
+  $("#milk-correction-cancel").addEventListener("click", closeMilkCorrection);
+  $("#milk-checklist").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-milk-correction-id]");
+    if (button) openMilkCorrection(button.dataset.milkCorrectionId, button.dataset.milkCorrectionAction);
+  });
   $("#weight-form").addEventListener("submit", handleWeightSubmit);
   $("#breeding-form").addEventListener("submit", handleBreedingSubmit);
   $("#health-form").addEventListener("submit", handleHealthSubmit);

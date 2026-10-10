@@ -77,6 +77,7 @@ const context = vm.createContext({
     getHerdSummary: () => dashboardRead,
     getTodayMilkSummary: async () => ({ totalLiters: 0 }),
     listMilkRecordsForDate: async () => [],
+    listMilkLedgerForDate: async () => [],
     listFinanceEntries: async () => [],
     getPendingSyncCount: async () => 1,
     getAnimal: async () => ({ animal, photo: {} }),
