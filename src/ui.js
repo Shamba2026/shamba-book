@@ -1,5 +1,5 @@
-import { APP_CONFIG } from "./config.js";
-import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js";
+import { APP_CONFIG } from "./config.js?build=20261010-03";
+import { animalTypeLabel, calculateExpectedCalving, calculateMilkValue, getMilkWeekPeriod, toLocalDateString } from "./domain/farm-rules.js?build=20261010-03";
 import { filterFinanceEntries, formatFinanceMoney, summarizeFinanceEntries } from "./domain/finance.js?build=20260927-01";
 import { validateAnimal, validateMilk, validateWeight, validateFinance } from "./domain/validation.js?build=20261009-01";
 import * as FarmRepository from "./storage/farm-repository.js?build=20261010-01";
@@ -9,11 +9,11 @@ import { evaluateRation } from "./domain/feed/ration-diagnostics.js?build=202610
 import { classifyComparisonReviewHistory, compareRequirementToRationEvidence, latestComparisonReviewForEvidence } from "./domain/feed/requirement-ration-comparison.js?build=20261007-08";
 import { assessComparisonEvidenceCurrency } from "./domain/feed/comparison-evidence-currency.js?build=20261007-06";
 import { buildNutritionEvidenceStatus } from "./domain/feed/nutrition-evidence-status.js?build=20261007-10";
-import { getAuthClient } from "./auth.js";
-import { verifyFarmAccess } from "./farm-access.js?build=20260927-02";
+import { getAuthClient } from "./auth.js?build=20261010-03";
+import { verifyFarmAccess } from "./farm-access.js?build=20261010-03";
 import { inspectRecoveryBackup } from "./storage/recovery-preflight.js?build=20260927-02";
-import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20260927-02";
-import { startSyncLoop } from "./sync/sync-engine.js?build=20260927-02";
+import { claimLegacyAnimal } from "./storage/legacy-claim.js?build=20261010-03";
+import { startSyncLoop } from "./sync/sync-engine.js?build=20261010-03";
 
 const $ = (selector) => document.querySelector(selector);
 let signedIn = false;
@@ -1560,6 +1560,8 @@ async function initAuth() {
     if (user) await activateUser(user, client);
     else setSignedOut();
   };
+
+  signInButton.disabled = false;
 
   getClient().then(async (client) => {
     client.auth.onAuthStateChange((_event, session) => {

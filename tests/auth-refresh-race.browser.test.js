@@ -53,7 +53,13 @@ try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   context = await browser.newContext({ serviceWorkers: "block" });
   const page = await context.newPage();
-  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  let releaseStartup;
+  const startupGate = new Promise((resolve) => { releaseStartup = resolve; });
+  await page.route("**/src/main.js?*", async (route) => { await startupGate; await route.continue(); });
+  await page.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: "domcontentloaded" });
+  assert.equal(await page.locator("#auth-sign-in").isDisabled(), true,
+    "sign-in must be disabled before its handler attaches");
+  releaseStartup();
   await page.waitForFunction(() => typeof window.releaseInitialSession === "function");
   await page.locator("#auth-email").fill("auth-race@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");

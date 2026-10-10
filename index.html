@@ -52,7 +52,7 @@
       <div class="form-grid">
         <div class="field"><label for="auth-email">Email</label><input id="auth-email" type="email" autocomplete="username" placeholder="farm owner email"></div>
         <div class="field"><label for="auth-password">Password</label><input id="auth-password" type="password" autocomplete="current-password" placeholder="password"></div>
-        <div class="field"><button id="auth-sign-in" class="primary" type="button">Sign in</button></div>
+        <div class="field"><button id="auth-sign-in" class="primary" type="button" disabled>Sign in</button></div>
       </div>
     </section>
 
@@ -313,7 +313,7 @@
 
       const script = document.createElement("script");
       script.type = "module";
-      script.src = "./src/main.js?build=20261010-01";
+      script.src = "./src/main.js?build=20261010-03";
       script.onerror = () => {
         const fatal = document.querySelector("#fatal-error");
         if (fatal) {

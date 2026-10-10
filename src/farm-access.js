@@ -1,4 +1,4 @@
-import { APP_CONFIG } from "./config.js";
+import { APP_CONFIG } from "./config.js?build=20261010-03";
 import { get, put } from "./storage/local-db.js?build=20260928-02";
 
 // Membership evidence is per signed-in user and configured farm. Cached evidence

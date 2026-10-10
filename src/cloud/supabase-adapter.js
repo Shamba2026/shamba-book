@@ -1,6 +1,6 @@
-import { APP_CONFIG } from "../config.js";
+import { APP_CONFIG } from "../config.js?build=20261010-03";
 import { get } from "../storage/local-db.js?build=20260928-02";
-import { getAuthClient } from "../auth.js";
+import { getAuthClient } from "../auth.js?build=20261010-03";
 
 let clientPromise = null;
 

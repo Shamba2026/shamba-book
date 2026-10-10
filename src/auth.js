@@ -1,4 +1,4 @@
-import { APP_CONFIG } from "./config.js";
+import { APP_CONFIG } from "./config.js?build=20261010-03";
 
 let clientPromise = null;
 

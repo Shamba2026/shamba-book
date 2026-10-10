@@ -1,4 +1,4 @@
-import { APP_CONFIG } from "../config.js";
+import { APP_CONFIG } from "../config.js?build=20261010-03";
 
 const DAY_INDEX = Object.freeze({
   Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,

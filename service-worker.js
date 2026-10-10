@@ -4,11 +4,11 @@ const PREFIX = "ngombe-herdbook-";
 const ASSETS = [
   "./index.html", "./manifest.json", "./styles/app.css?build=20261009-01",
   "./styles/app.css?build=20261010-02", "./assets/vendor/supabase-2.117.3.js",
-  "./src/main.js?build=20261010-01", "./src/ui.js?build=20261010-01",
-  "./src/auth.js", "./src/config.js", "./src/farm-access.js", "./src/farm-access.js?build=20260927-02",
-  "./src/cloud/supabase-adapter.js?build=20260927-02",
+  "./src/main.js?build=20261010-03", "./src/ui.js?build=20261010-03",
+  "./src/auth.js?build=20261010-03", "./src/config.js?build=20261010-03", "./src/farm-access.js", "./src/farm-access.js?build=20261010-03",
+  "./src/cloud/supabase-adapter.js?build=20261010-03",
   "./src/domain/animal-nutrition-classification.js?build=20261006-03",
-  "./src/domain/farm-rules.js", "./src/domain/finance.js?build=20260927-01",
+  "./src/domain/farm-rules.js?build=20261010-03", "./src/domain/finance.js?build=20260927-01",
   "./src/domain/milk-ledger.js?build=20261010-01",
   "./src/domain/nutrition-requirement.js?build=20261006-02",
   "./src/domain/validation.js?build=20261009-01",
@@ -27,11 +27,11 @@ const ASSETS = [
   "./src/domain/feed/requirement-ration-comparison.js",
   "./src/domain/feed/requirement-ration-comparison.js?build=20261007-08",
   "./src/storage/farm-repository.js?build=20261010-01",
-  "./src/storage/legacy-claim.js?build=20260927-02",
+  "./src/storage/legacy-claim.js?build=20261010-03",
   "./src/storage/local-db.js?build=20260928-02",
   "./src/storage/local-db.js?build=20261010-01",
   "./src/storage/recovery-preflight.js?build=20260927-02",
-  "./src/sync/sync-engine.js?build=20260927-02"
+  "./src/sync/sync-engine.js?build=20261010-03"
 ];
 const allowed = new Set(ASSETS.map((asset) => new URL(asset, self.registration.scope).href));
 const offlinePage = new URL("./index.html", self.registration.scope).href;

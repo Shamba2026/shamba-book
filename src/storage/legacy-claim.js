@@ -1,6 +1,6 @@
 import { get, claimLegacyAnimalAtomically } from "./local-db.js?build=20260928-02";
 import { inspectRecoveryBackup, readRecoveryEvidence } from "./recovery-preflight.js?build=20260927-02";
-import { verifyFarmAccess } from "../farm-access.js";
+import { verifyFarmAccess } from "../farm-access.js?build=20261010-03";
 
 export async function claimLegacyAnimal({ client, userId, animalId, animalCode, file, signal, assertCurrent }) {
   if (!navigator.onLine || signal?.aborted) throw new Error("Connect to verify membership before claiming ownership.");
