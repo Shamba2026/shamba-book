@@ -28,7 +28,10 @@ const server = createServer(async (request, response) => {
     response.writeHead(404).end(); return;
   }
   try { response.writeHead(200, { "content-type": types[path.extname(filename)] || "application/octet-stream", "cache-control": "no-store" })
-    .end(await readFile(filename)); }
+    .end(relative === "src/ui.js" ? (await readFile(filename, "utf8"))
+      .replace('const setSignedOut = () => {', 'const setSignedOut = () => { console.log("AUTH_TRACE signedOut", new Error().stack);')
+      .replace('client.auth.onAuthStateChange((_event, session) => {', 'client.auth.onAuthStateChange((_event, session) => { console.log("AUTH_TRACE event", _event, Boolean(session?.user));')
+      : await readFile(filename)); }
   catch { response.writeHead(404).end(); }
 });
 
@@ -53,6 +56,7 @@ try {
     await route.abort();
   });
   const page = await context.newPage();
+  page.on("console", (message) => { if (message.text().startsWith("AUTH_TRACE")) console.log(message.text()); });
   await page.goto(origin);
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
   await page.locator("#auth-email").fill(user.email);
