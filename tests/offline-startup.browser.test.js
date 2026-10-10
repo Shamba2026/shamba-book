@@ -18,7 +18,7 @@ const listeners = new Set();
 const session = () => localStorage.getItem(key) === user.id ? { user } : null;
 const auth = {
   onAuthStateChange(callback) { listeners.add(callback); return { data: { subscription: { unsubscribe() { listeners.delete(callback); } } } }; },
-  async getSession() { return { data: { session: session() }, error: null }; },
+  async getSession() { localStorage.setItem("isolated-session-checked", "1"); return { data: { session: session() }, error: null }; },
   async signInWithPassword({ email, password }) {
     if (email !== user.email || password !== "TEST-ONLY") return { error: new Error("Test credentials rejected") };
     localStorage.setItem(key, user.id);
@@ -71,29 +71,33 @@ try {
   const page = await context.newPage();
   await page.goto(origin);
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.waitForFunction(() => localStorage.getItem("isolated-session-checked") === "1" &&
+    document.querySelector("#auth-status")?.textContent?.includes("Not signed in"));
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
-  assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+  await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active),
+    undefined, { timeout: 5000 });
   await page.locator("#auth-email").fill("offline@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await waitForAuthenticatedApp(page, { expectedUserId: "offline-test-member", farmId: APP_CONFIG.cloud.farmId });
   assert.equal(await page.locator("#auth-card").isVisible(), false);
   assert.equal(await page.evaluate(() => localStorage.getItem("isolated-offline-session")), "offline-test-member");
-  assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+  assert.equal(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)), true);
   assert.deepEqual(externalRequests, [], "synthetic session must not reach any external endpoint");
 
-  // A second launch with an existing synthetic session cannot load the shell offline.
+  // The shell must load on a second offline tab, but this test does not authorize
+  // an offline farm session. The cached original auth module cannot use its CDN.
   await context.setOffline(true);
   const reopened = await context.newPage();
-  let navigationFailure = null;
-  try { await reopened.goto(origin, { waitUntil: "domcontentloaded", timeout: 5000 }); }
-  catch (error) { navigationFailure = String(error); }
-  assert.match(navigationFailure || "", /ERR_INTERNET_DISCONNECTED|ERR_FAILED/,
-    "cold offline navigation currently fails before the existing session can be examined");
-  assert.equal(await reopened.locator(".bottom-nav").count(), 0);
+  await reopened.goto(origin, { waitUntil: "domcontentloaded", timeout: 5000 });
+  await reopened.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await reopened.locator("#auth-lock-message").isVisible(), true);
+  assert.equal(await reopened.locator(".bottom-nav").isVisible(), false);
   assert.equal(await reopened.locator("#animal-list [data-animal-id]").count(), 0);
-  console.log("offline-startup.browser.test.js: PASS (cold offline launch blocked on current baseline)");
+  assert.equal(await reopened.evaluate(() => localStorage.getItem("isolated-offline-session")), "offline-test-member",
+    "the session marker persists, but does not itself unlock farm data");
+  console.log("offline-startup.browser.test.js: PASS (offline shell, farm data locked)");
 } finally {
   await context?.close();
   await browser?.close();
