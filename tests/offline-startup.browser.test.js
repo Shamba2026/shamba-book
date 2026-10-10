@@ -31,7 +31,7 @@ const auth = {
     return { error: null };
   }
 };
-export async function getAuthClient() { return { auth, from(table) {
+export async function getAuthClient() { if (!navigator.onLine) throw new Error("Synthetic auth client unavailable offline"); return { auth, from(table) {
   if (table !== "farm_members") throw new Error("Unexpected table: " + table);
   return { select() { return this; }, eq() { return this; }, async maybeSingle() {
     return { data: { farm_id: "${APP_CONFIG.cloud.farmId}" }, error: null };
@@ -42,7 +42,7 @@ const server = createServer(async (request, response) => {
   const relative = new URL(request.url, "http://127.0.0.1").pathname.slice(1) || "index.html";
   const filename = path.resolve(root, relative);
   if (request.method !== "GET" || !filename.startsWith(root + path.sep) ||
-      !/^(index\.html|manifest\.json|assets\/|src\/|styles\/)/.test(relative)) {
+      !/^(index\.html|manifest\.json|service-worker\.js|assets\/|src\/|styles\/)/.test(relative)) {
     response.writeHead(404).end(); return;
   }
   if (relative === "src/auth.js") {
@@ -75,27 +75,35 @@ try {
     document.querySelector("#auth-status")?.textContent?.includes("Not signed in"));
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
-  assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+  assert.equal(await page.evaluate(() => Promise.race([
+    navigator.serviceWorker.ready.then((registration) => Boolean(registration.active)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("No active shell worker")), 5000))
+  ])), true);
+  assert.equal(await page.evaluate(async () => {
+    const cache = await caches.open("ngombe-herdbook-static-20261010-01");
+    return Boolean(await cache.match("./styles/app.css?build=20261010-02"));
+  }), true, "the separately reviewed landing stylesheet must be available to the offline shell");
   await page.locator("#auth-email").fill("offline@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();
   await waitForAuthenticatedApp(page, { expectedUserId: "offline-test-member", farmId: APP_CONFIG.cloud.farmId });
   assert.equal(await page.locator("#auth-card").isVisible(), false);
   assert.equal(await page.evaluate(() => localStorage.getItem("isolated-offline-session")), "offline-test-member");
-  assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+  assert.equal(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)), true);
   assert.deepEqual(externalRequests, [], "synthetic session must not reach any external endpoint");
 
-  // A second launch with an existing synthetic session cannot load the shell offline.
+  // The shell must load on a second offline tab, but this test does not authorize
+  // an offline farm session. The synthetic auth module refuses offline access.
   await context.setOffline(true);
   const reopened = await context.newPage();
-  let navigationFailure = null;
-  try { await reopened.goto(origin, { waitUntil: "domcontentloaded", timeout: 5000 }); }
-  catch (error) { navigationFailure = String(error); }
-  assert.match(navigationFailure || "", /ERR_INTERNET_DISCONNECTED|ERR_FAILED/,
-    "cold offline navigation currently fails before the existing session can be examined");
-  assert.equal(await reopened.locator(".bottom-nav").count(), 0);
+  await reopened.goto(origin, { waitUntil: "domcontentloaded", timeout: 5000 });
+  await reopened.locator("#auth-sign-in:not([hidden])").waitFor();
+  assert.equal(await reopened.locator("#auth-lock-message").isVisible(), true);
+  assert.equal(await reopened.locator(".bottom-nav").isVisible(), false);
   assert.equal(await reopened.locator("#animal-list [data-animal-id]").count(), 0);
-  console.log("offline-startup.browser.test.js: PASS (cold offline launch blocked on current baseline)");
+  assert.equal(await reopened.evaluate(() => localStorage.getItem("isolated-offline-session")), "offline-test-member",
+    "the session marker persists, but does not itself unlock farm data");
+  console.log("offline-startup.browser.test.js: PASS (offline shell, farm data locked)");
 } finally {
   await context?.close();
   await browser?.close();
