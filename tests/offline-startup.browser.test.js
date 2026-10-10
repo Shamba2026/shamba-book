@@ -18,7 +18,7 @@ const listeners = new Set();
 const session = () => localStorage.getItem(key) === user.id ? { user } : null;
 const auth = {
   onAuthStateChange(callback) { listeners.add(callback); return { data: { subscription: { unsubscribe() { listeners.delete(callback); } } } }; },
-  async getSession() { return { data: { session: session() }, error: null }; },
+  async getSession() { localStorage.setItem("isolated-session-checked", "1"); return { data: { session: session() }, error: null }; },
   async signInWithPassword({ email, password }) {
     if (email !== user.email || password !== "TEST-ONLY") return { error: new Error("Test credentials rejected") };
     localStorage.setItem(key, user.id);
@@ -71,6 +71,8 @@ try {
   const page = await context.newPage();
   await page.goto(origin);
   await page.locator("#auth-sign-in:not([hidden])").waitFor();
+  await page.waitForFunction(() => localStorage.getItem("isolated-session-checked") === "1" &&
+    document.querySelector("#auth-status")?.textContent?.includes("Not signed in"));
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
   assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
