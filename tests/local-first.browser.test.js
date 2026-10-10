@@ -162,6 +162,16 @@ try {
     "signed-out capability summary should not depend on decorative icon tiles");
   assert.match(await page.locator(".landing-hero").evaluate((el) => getComputedStyle(el).backgroundImage),
     /landing-dairy-farm\.jpg/, "signed-out hero must use the bundled farm visual");
+  assert.equal(await page.locator("#landing-workflow [data-session]").count(), 3,
+    "the public workflow should show all three milking sessions without farm records");
+  assert.equal(await page.locator("#landing-story article").count(), 2,
+    "the public page should explain animal and milk records in distinct editorial sections");
+  assert.equal(await page.locator("#landing-sign-in-link").getAttribute("href"), "#auth-card");
+  await page.locator("#landing-sign-in-link").click();
+  assert.equal(await page.locator("#auth-email").isVisible(), true);
+  assert.equal(await page.locator("[data-view='home']").isVisible(), false);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true,
+    "desktop signed-out landing must not overflow horizontally");
   const farmVisualResponse = await page.request.get(`${origin}/assets/landing-dairy-farm.jpg`);
   assert.equal(farmVisualResponse.status(), 200,
     `bundled farm visual request failed with ${farmVisualResponse.status()}`);
