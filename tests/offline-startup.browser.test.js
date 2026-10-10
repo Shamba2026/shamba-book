@@ -31,7 +31,7 @@ const auth = {
     return { error: null };
   }
 };
-export async function getAuthClient() { return { auth, from(table) {
+export async function getAuthClient() { if (!navigator.onLine) throw new Error("Synthetic auth client unavailable offline"); return { auth, from(table) {
   if (table !== "farm_members") throw new Error("Unexpected table: " + table);
   return { select() { return this; }, eq() { return this; }, async maybeSingle() {
     return { data: { farm_id: "${APP_CONFIG.cloud.farmId}" }, error: null };
@@ -42,7 +42,7 @@ const server = createServer(async (request, response) => {
   const relative = new URL(request.url, "http://127.0.0.1").pathname.slice(1) || "index.html";
   const filename = path.resolve(root, relative);
   if (request.method !== "GET" || !filename.startsWith(root + path.sep) ||
-      !/^(index\.html|manifest\.json|assets\/|src\/|styles\/)/.test(relative)) {
+      !/^(index\.html|manifest\.json|service-worker\.js|assets\/|src\/|styles\/)/.test(relative)) {
     response.writeHead(404).end(); return;
   }
   if (relative === "src/auth.js") {
@@ -75,8 +75,10 @@ try {
     document.querySelector("#auth-status")?.textContent?.includes("Not signed in"));
   assert.equal(await page.locator(".bottom-nav").isVisible(), false);
   assert.equal(await page.locator("#animal-list [data-animal-id]").count(), 0);
-  await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active),
-    undefined, { timeout: 5000 });
+  assert.equal(await page.evaluate(() => Promise.race([
+    navigator.serviceWorker.ready.then((registration) => Boolean(registration.active)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("No active shell worker")), 5000))
+  ])), true);
   await page.locator("#auth-email").fill("offline@example.invalid");
   await page.locator("#auth-password").fill("TEST-ONLY");
   await page.locator("#auth-sign-in").click();

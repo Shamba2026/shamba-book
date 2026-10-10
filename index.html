@@ -283,13 +283,11 @@
       const cleanupKey = "ngombe-herdbook-sw-cleanup";
       try {
         if ("serviceWorker" in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          if (registrations.length) {
-            await Promise.all(registrations.map((registration) => registration.unregister()));
-            if ("caches" in window) {
-              const keys = await caches.keys();
-              await Promise.all(keys.map((key) => caches.delete(key)));
-            }
+          const keys = "caches" in window ? await caches.keys() : [];
+          if (keys.includes("ngombe-herdbook-shell-v20")) {
+            const legacy = await navigator.serviceWorker.getRegistration("./");
+            if (legacy?.active?.scriptURL.endsWith("/service-worker.js")) await legacy.unregister();
+            await caches.delete("ngombe-herdbook-shell-v20");
             if (!sessionStorage.getItem(cleanupKey)) {
               sessionStorage.setItem(cleanupKey, "1");
               location.reload();
@@ -297,6 +295,8 @@
             }
             sessionStorage.removeItem(cleanupKey);
           }
+          navigator.serviceWorker.register("./service-worker.js", { scope: "./" })
+            .catch((error) => console.warn("Offline shell registration failed:", error));
         }
       } catch (error) {
         console.warn("Legacy cache cleanup failed:", error);

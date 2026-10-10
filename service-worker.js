@@ -1,55 +1,68 @@
-const CACHE_NAME = "ngombe-herdbook-shell-v20";
+// Versioned app shell only. Farm data stays in IndexedDB; auth/API responses are never cached.
+const CACHE_NAME = "ngombe-herdbook-static-20261010-01";
+const PREFIX = "ngombe-herdbook-";
 const ASSETS = [
-  "./","./index.html","./manifest.json","./styles/app.css?build=20260927-03",
-  "./src/main.js?build=20260922-04","./src/ui.js?build=20260922-04","./src/auth.js","./src/config.js","./src/farm-access.js",
-  "./src/domain/farm-rules.js","./src/domain/validation.js?build=20260922-04","./src/domain/finance.js?build=20260927-01",
-  "./src/storage/local-db.js?build=20260922-03","./src/storage/farm-repository.js?build=20260922-04",
-  "./src/storage/recovery-preflight.js?build=20260922-03","./src/storage/legacy-claim.js?build=20260922-03",
-  "./src/cloud/supabase-adapter.js","./src/sync/sync-engine.js"
+  "./index.html", "./manifest.json", "./styles/app.css?build=20261009-01",
+  "./src/main.js?build=20261010-01", "./src/ui.js?build=20261010-01",
+  "./src/auth.js", "./src/config.js", "./src/farm-access.js", "./src/farm-access.js?build=20260927-02",
+  "./src/cloud/supabase-adapter.js?build=20260927-02",
+  "./src/domain/animal-nutrition-classification.js?build=20261006-03",
+  "./src/domain/farm-rules.js", "./src/domain/finance.js?build=20260927-01",
+  "./src/domain/milk-ledger.js?build=20261010-01",
+  "./src/domain/nutrition-requirement.js?build=20261006-02",
+  "./src/domain/validation.js?build=20261009-01",
+  "./src/domain/feed/comparison-evidence-currency.js?build=20261007-06",
+  "./src/domain/feed/diagnostic-profile.js?build=20261005-03",
+  "./src/domain/feed/feed-evidence.js",
+  "./src/domain/feed/feed-inventory.js?build=20260928-01",
+  "./src/domain/feed/feed-inventory.js?build=20260928-04",
+  "./src/domain/feed/feed-math.js",
+  "./src/domain/feed/nutrition-evidence-status.js?build=20261007-10",
+  "./src/domain/feed/nutrition-profile.js?build=20260928-04",
+  "./src/domain/feed/nutrition-selection.js?build=20260928-04",
+  "./src/domain/feed/ration-allocation.js?build=20261007-03",
+  "./src/domain/feed/ration-contract.js?build=20261005-02",
+  "./src/domain/feed/ration-diagnostics.js?build=20261005-03",
+  "./src/domain/feed/requirement-ration-comparison.js",
+  "./src/domain/feed/requirement-ration-comparison.js?build=20261007-08",
+  "./src/storage/farm-repository.js?build=20261010-01",
+  "./src/storage/legacy-claim.js?build=20260927-02",
+  "./src/storage/local-db.js?build=20260928-02",
+  "./src/storage/local-db.js?build=20261010-01",
+  "./src/storage/recovery-preflight.js?build=20260927-02",
+  "./src/sync/sync-engine.js?build=20260927-02"
 ];
+const allowed = new Set(ASSETS.map((asset) => new URL(asset, self.registration.scope).href));
+const offlinePage = new URL("./index.html", self.registration.scope).href;
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      ))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys
+    .filter((key) => key.startsWith(PREFIX) && key !== CACHE_NAME)
+    .map((key) => caches.delete(key)))));
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || !url.pathname.startsWith(new URL(self.registration.scope).pathname)) return;
+  const navigation = request.mode === "navigate";
+  if (!navigation && !allowed.has(url.href)) return;
 
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
-
-  const isAppShellRequest =
-    event.request.mode === "navigate" ||
-    url.pathname.endsWith("/index.html") ||
-    url.pathname.endsWith("/service-worker.js") ||
-    url.pathname.includes("/src/") ||
-    url.pathname.includes("/styles/");
-
-  if (!isAppShellRequest) return;
-
-  event.respondWith(
-    fetch(event.request, { cache: "no-store" })
-      .then((response) => {
-        if (response.ok && event.request.method === "GET") {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./index.html")))
-  );
+  event.respondWith(fetch(request).then((response) => {
+    if (response.ok && response.type === "basic") {
+      const copy = response.clone();
+      event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
+    }
+    return response;
+  }).catch(async () => {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    if (navigation) return caches.match(offlinePage);
+    return Response.error();
+  }));
 });
